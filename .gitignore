@@ -1,0 +1,41 @@
+# --- project-specific exclusions (per request) ------------------------------
+# Large prescribed inputs (HITRAN 2020, AFGL profile, CU solar spectrum)
+data/
+# All simulation output (chunk files, per-band + merged HDF5, absorption cache)
+out/
+# Operating-rules file (kept local, not committed)
+CLAUDE.md
+
+# --- scientific data-format files (generated / bulky / provided separately) -
+# Code lives in git; all data (prescribed inputs + downloaded TIPS-2021
+# partition sums) is provided separately, consistent with excluding data/.
+*.h5
+*.hdf5
+*.nc
+*.npy
+*.npz
+*.pkl
+*.bin
+*.bin.ctl
+*.QTpy
+*.piz
+*.par
+
+# er3t / MCARaTS scratch run directories
+tmp-data/
+*.tmp
+
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+.venv/
+venv/
+
+# --- OS / editor ------------------------------------------------------------
+.DS_Store
+.claude/
+.vscode/
+*.swp
