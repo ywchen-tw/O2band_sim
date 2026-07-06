@@ -95,11 +95,14 @@ def band_metrics(path):
 
 
 # ---------------------------------------------------------------------------- #
-def diff_stats(a, b, stderr=None, eps=1e-12):
+def diff_stats(a, b, stderr=None, ref_floor=None):
     """Difference distribution of a (ours) vs b (reference) on a shared grid.
 
     Returns a dict of descriptive statistics -- no pass/fail.  Relative stats use
-    only points where |b| > eps.  ``stderr`` (per-point) adds |a-b|/stderr.
+    only points where |b| > ``ref_floor``.  ``ref_floor`` defaults to a scale-aware
+    1e-9 * max|b| (so tiny-magnitude data like cross-sections are not masked out);
+    pass an explicit floor (e.g. a reflectance level) to exclude near-zero points
+    such as saturated line cores.  ``stderr`` (per-point) adds |a-b|/stderr.
     """
     a = np.asarray(a, dtype=np.float64)
     b = np.asarray(b, dtype=np.float64)
@@ -114,7 +117,9 @@ def diff_stats(a, b, stderr=None, eps=1e-12):
         'max_abs_diff': float(np.max(np.abs(d))) if a.size else np.nan,
         'corr': float(np.corrcoef(a, b)[0, 1]) if a.size > 1 else np.nan,
     }
-    rmask = np.abs(b) > eps
+    if ref_floor is None:
+        ref_floor = 1.0e-9 * (float(np.max(np.abs(b))) if b.size else 1.0)
+    rmask = np.abs(b) > ref_floor
     if rmask.any():
         rd = d[rmask] / b[rmask]
         out.update({
@@ -127,7 +132,7 @@ def diff_stats(a, b, stderr=None, eps=1e-12):
         })
     if stderr is not None:
         se = np.asarray(stderr, dtype=np.float64)[m]
-        smask = se > eps
+        smask = se > 0
         if smask.any():
             ns = np.abs(d[smask]) / se[smask]
             out['diff_in_noise_units_mean'] = float(np.mean(ns))
