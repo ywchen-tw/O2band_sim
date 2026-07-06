@@ -3,8 +3,9 @@
 Blueprint for judging whether this simulation's O2 A/B-band reflectance and
 optical-thickness products agree with other research. Written in the project's
 plan-before-implementing style (cf. [PLAN.md](PLAN.md)); items are **[PROPOSED]**,
-**[NEEDS SIGN-OFF]**, or **[AGREED]**. Nothing here is built until §5 criteria and
-§3 references are signed off.
+**[NEEDS SIGN-OFF]**, or **[AGREED]**. Direction decisions are resolved (§9): no
+participant data, **report difference statistics (not pass/fail)**, local reruns
+enabled as a secondary cross-check.
 
 > Scope note (2026-07-06): this is an *evaluation* plan. It does not change the
 > physics of the simulation; it defines what we compare against, how, and the
@@ -22,17 +23,19 @@ Bands* (KNMI, 2024). Our er3t/MCARaTS run already uses the prescribed Phase-1
 settings (mid-lat summer; SZA 0/30/60; nadir; albedo 0/0.1; 680–695 & 757–772 nm;
 HITRAN 2020; Voigt; 0.001 nm; outputs reflectance + O2A/O2B OT + Rayleigh OT).
 
-So "other research" has two meanings, handled separately:
-1. **The other participating RT models** — the authoritative target. Their
-   submissions are *not* on disk yet; obtained from the intercomparison group.
-2. **Independent public references** — used to self-validate *now*, before/without
-   the group ensemble, and to sanity-check band-level behaviour.
+**Availability (confirmed 2026-07-06):** the other participants' submitted
+results are **not available** — [O2_abs_intercomparison.md](O2_abs_intercomparison.md)
+(the prescription) is the only document in hand. So the participant ensemble is
+*not* a reference we can use now. Evaluation therefore rests on:
+1. **Published band-level metrics** and the closest **public reference spectra** —
+   the primary comparison.
+2. **Independent local model reruns** (HAPI, libRadtran/DISORT, ABSCO) — enabled as
+   a secondary, lower-priority cross-check (Appendix A).
 
 **Reality check (from a public-literature search, §3):** *no* public dataset
-reproduces the exact prescribed config (0.001 nm, Voigt, no CIA/line-mixing,
-those exact geometries). Therefore the evaluation leans on (a) the participant
-ensemble once available, and (b) **published band-level metrics** against the
-closest public datasets, with config differences explicitly accounted for.
+reproduces the exact prescribed config (0.001 nm, Voigt, no CIA/line-mixing, those
+geometries). So comparisons are **descriptive** — we report difference *statistics*
+against each reference (not pass/fail), with config differences attributed.
 
 ---
 
@@ -59,14 +62,13 @@ public reference spectra; local model reruns are optional (Appendix A).
 
 | # | reference | gives | status / notes |
 |---|---|---|---|
-| R1 | **KNMI intercomparison participants** (Wang/Stammes et al., 2024) | reflectance + OT spectra from 6+ independent RT models — the authoritative ensemble | **obtain from group**; not public. Primary target. |
+| R1 | ~~KNMI intercomparison participants~~ | ensemble reflectance + OT | **NOT AVAILABLE** — only the prescription doc was received. Revisit if the group shares results. |
 | R2 | **Richter, Emde et al. 2022, AMT 15, 1587** — MYSTIC synthetic dataset, incl. O2A **755–775 nm** | high-res O2A TOA reflectance (public) | cloud/aerosol study; use its **clear-sky Rayleigh** cases; config differs (convolve/attribute). |
 | R3 | **Kopparla, Natraj et al. 2017, JQSRT 198:104** — PCA vs line-by-line **DISORT**, O2 A-band | reference TOA reflectance + a stated LBL-DISORT accuracy | validates band-level reflectance magnitude/shape. |
 | R4 | **Vidot et al. 2021, JQSRT 275:107847** (H2O near O2A) + HITRAN 2020 O2 line-parameter papers (e.g. Brown & Plymate) | absorption / line-parameter cross-checks | for O2/H2O OT sanity. |
-| R5 | **Published band metrics** — O2 A/B-band equivalent width, band-integrated transmittance, continuum reflectance vs SZA/albedo from the literature | scalar sanity numbers robust to resolution | primary robust check given resolution mismatches. |
+| R5 | **Published band metrics** — O2 A/B-band equivalent width, band-integrated transmittance, continuum reflectance vs SZA/albedo from the literature | scalar sanity numbers robust to resolution | **primary** robust check given resolution mismatches + no participant data. |
 
-Action E0: fetch/catalog R2–R5, record exact configs, and request R1 from the
-intercomparison coordinators.
+Action E0: fetch/catalog R2–R5, record exact configs. R1 shelved (unavailable).
 
 ---
 
@@ -101,22 +103,32 @@ references, to the **Phase-1 physical omissions** (§8).
 
 ---
 
-## 5. Agreement-criteria table — **[NEEDS SIGN-OFF]**
+## 5. Difference statistics (no pass/fail) — **[AGREED]**
 
-Green/amber/red, mirroring PLAN.md §6. Thresholds are proposals to be ratified.
+Per user decision, the evaluation **reports statistics, not verdicts** — no
+green/amber/red thresholds. For each quantity below, against each available
+reference, tabulate the **difference distribution**:
 
-| # | check | reference | green (proposed) |
-|---|---|---|---|
-| C1 | Rayleigh column OT | R2/literature Bodhaine | < 1 % |
-| C2 | O2 column OT (A & B) | R4 / same-config LBL | < 2 % |
-| C3 | continuum (window) reflectance vs SZA, albedo | R2/R3/R5 | < 3 % (and within MC noise) |
-| C4 | band-integrated reflectance | R3/R5 | < 3 % |
-| C5 | O2 A-band equivalent width | R5 | < 5 % |
-| C6 | reflectance convention (ρ→A window limit) | analytic | < 1 % |
-| C7 | per-λ reflectance vs participant models (R1) | R1 ensemble | within ensemble spread |
-| C8 | O2/Rayleigh OT vs participant models (R1) | R1 ensemble | within ensemble spread |
+- mean bias, median, RMS, max |Δ| (absolute *and* relative),
+- 5th/50th/95th percentiles of the relative difference,
+- spectral correlation coefficient (where a per-λ reference exists),
+- the value in **MC-noise units** (Δ / reflectance_stderr) so the reader sees
+  whether a difference exceeds the simulation's own noise.
 
-Amber = 1–3× green; red = worse, requiring an attributed explanation.
+Quantities compared (per band × SZA × albedo where applicable):
+
+| # | quantity | against |
+|---|---|---|
+| Q1 | Rayleigh column OT | Bodhaine literature / R2 |
+| Q2 | O2 & H2O column OT (A & B) | R4 / local LBL (HAPI, App. A) |
+| Q3 | continuum (window) reflectance vs SZA, albedo | R3/R5 |
+| Q4 | band-integrated reflectance | R3/R5 |
+| Q5 | O2 A/B-band equivalent width | R5 |
+| Q6 | reflectance-convention limit ρ→A (window) | analytic |
+| Q7 | per-λ reflectance / OT (if a matched-config reference appears) | R2 / local reruns |
+
+The report presents these as tables + difference plots and *describes* the
+differences (with §2 attribution); it does not label them pass/fail.
 
 ---
 
@@ -126,14 +138,14 @@ Amber = 1–3× green; red = worse, requiring an attributed explanation.
   ratify §5 thresholds. *No code beyond a reference catalog.*
 - **E1 — Optical-thickness evaluation (no RT).** C1, C2: column + per-λ OT vs
   public references / band metrics; Rayleigh vs Bodhaine literature.
-- **E2 — Reflectance band-metrics evaluation.** C3–C6: continuum level,
-  band-integrated ρ, equivalent width vs R2/R3/R5, all against the MC-noise
-  envelope; confirm the convention limit.
-- **E3 — Participant-ensemble comparison** *(when R1 arrives)*. C7, C8: per-λ +
-  band-integrated reflectance/OT vs each model; ensemble mean/spread; flag
-  outliers; optional convolution to TROPOMI/MetImage for the workshop's channel view.
-- **E4 — Report + criteria table.** Green/amber/red with an attributed explanation
-  for every non-green; plots; a short summary suitable to feed back to the group.
+- **E2 — Reflectance band-metrics evaluation.** Q3–Q6: continuum level,
+  band-integrated ρ, equivalent width vs R2/R3/R5, all reported in MC-noise units;
+  confirm the convention limit.
+- **E3 — Participant-ensemble comparison — SHELVED** (R1 unavailable). If the group
+  later shares results: per-λ + band-integrated reflectance/OT vs each model,
+  ensemble mean/spread, optional convolution to TROPOMI/MetImage.
+- **E4 — Report.** Difference-statistics tables (§5) + plots, each difference
+  *described* and §2-attributed. No pass/fail labelling.
 
 ---
 
@@ -161,14 +173,14 @@ Amber = 1–3× green; red = worse, requiring an attributed explanation.
 
 ---
 
-## 9. Open decisions — **[NEEDS SIGN-OFF]**
+## 9. Decisions — **[RESOLVED 2026-07-06]**
 
-1. **R1 timeline / access** — who provides the participant submissions, in what
-   format, and when? Drives whether E3 leads or trails E1/E2.
-2. **Criteria thresholds** (§5) — ratify or adjust the green bands.
-3. **Optional local cross-checks** (Appendix A) — enable HAPI (same-HITRAN LBL,
-   would decisively validate C2) and/or libRadtran/DISORT (independent RT for
-   C3–C6)? Both are available on this system; deprioritised for now.
+1. **Participant data (R1)** — *not available*; only the prescription doc was
+   received. E3 shelved; evaluation uses public references + band metrics.
+2. **Criteria** — *none*; report **difference statistics**, not pass/fail (§5).
+3. **Local cross-checks** (Appendix A) — *enabled but not priority*: set up HAPI /
+   libRadtran / ABSCO as secondary references; the primary path is published band
+   metrics + public reference spectra.
 
 ---
 
