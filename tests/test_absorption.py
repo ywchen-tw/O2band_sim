@@ -20,7 +20,8 @@ import numpy as np
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(_HERE)
 sys.path.insert(0, os.path.join(_REPO, 'src'))
-DATA = os.path.join(_REPO, 'data')
+# Inputs live under O2BAND_DATA_DIR (scratch on CURC); fall back to repo data/.
+DATA = os.environ.get('O2BAND_DATA_DIR', os.path.join(_REPO, 'data'))
 
 from util.atmosphere import afgl_atmosphere
 from util.tips import tips2021
@@ -28,8 +29,15 @@ from util.optics import air_to_vac_nm, refractive_index_air
 from util.absorption import (hitran_lines, o2band_absorption, cal_rayleigh_od,
                              voigt_profile, doppler_hwhm, BANDS)
 
-# er3t's own Rayleigh cross-section, to confirm we feed the RT a matching value
-sys.path.insert(0, '/Users/yuch8913/programming/er3t/er3t')
+# er3t's own Rayleigh cross-section, to confirm we feed the RT a matching value.
+# Prefer an already-importable er3t (editable install in the `er3t` conda env);
+# otherwise fall back to ER3T_HOME (dir containing the `er3t` package).
+try:
+    import er3t                                             # noqa: F401
+except ImportError:
+    _ER3T_HOME = os.environ.get('ER3T_HOME', '/Users/yuch8913/programming/er3t')
+    if os.path.isdir(_ER3T_HOME) and _ER3T_HOME not in sys.path:
+        sys.path.insert(0, _ER3T_HOME)
 from er3t.util.util import mol_ext_wvl, cal_mol_ext
 
 

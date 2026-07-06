@@ -25,6 +25,10 @@ CLAUDE.md
 tmp-data/
 *.tmp
 
+# SLURM job stdout/stderr logs (sbatch --output)
+sbatch-output_*.txt
+slurm-*.out
+
 # --- Python -----------------------------------------------------------------
 __pycache__/
 *.py[cod]

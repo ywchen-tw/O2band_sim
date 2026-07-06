@@ -38,9 +38,19 @@ import h5py
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)                                   # src/  (for util)
-_ER3T = '/Users/yuch8913/programming/er3t/er3t'
-if _ER3T not in sys.path:
-    sys.path.insert(0, _ER3T)
+
+# --- locate er3t ------------------------------------------------------------ #
+# Prefer an already-importable er3t (e.g. an editable `pip install -e` in the
+# active conda env -- the CURC `er3t` env has this).  Otherwise add ER3T_HOME --
+# the directory that CONTAINS the `er3t` package -- to sys.path.  ER3T_HOME
+# defaults to the original dev checkout for backward compatibility; on CURC set
+# it (or `source setup_env.sh`) to /projects/yuch8913/wen_soft/er3t.
+try:
+    import er3t                                             # noqa: F401
+except ImportError:
+    _ER3T_HOME = os.environ.get('ER3T_HOME', '/Users/yuch8913/programming/er3t')
+    if os.path.isdir(_ER3T_HOME) and _ER3T_HOME not in sys.path:
+        sys.path.insert(0, _ER3T_HOME)
 
 from util.atmosphere import afgl_atmosphere
 from util.solar import solar_cu
@@ -55,6 +65,55 @@ from er3t.rtm.mca import mca_atm_1d, mcarats_ng
 __all__ = ['O2BandConfig', 'O2BandSim']
 
 _SCHEMA_VERSION = '1.0'
+
+# CURC (Alpine) fast scratch base for simulation inputs + result files
+_CURC_SCRATCH = '/scratch/alpine/yuch8913/O2band_sim'
+
+
+def _default_out_dir():
+    """Where simulation + result files go when ``out_dir`` is not given.
+
+    Priority: explicit ``O2BAND_OUT_DIR`` env var > CURC/Linux scratch
+    (``/scratch/alpine/yuch8913/O2band_sim``) > a local ``../out`` beside src/.
+    """
+    env = os.environ.get('O2BAND_OUT_DIR')
+    if env:
+        return env
+    if sys.platform.startswith('linux'):
+        return _CURC_SCRATCH
+    return os.path.normpath(os.path.join(_HERE, '..', 'out'))
+
+
+def _default_data_dir():
+    """Where prescribed inputs (HITRAN/AFGL/solar/QTpy) live when not given.
+
+    Priority: ``O2BAND_DATA_DIR`` env var > CURC/Linux scratch
+    (``/scratch/alpine/yuch8913/O2band_sim/data``) > a local ``../data``.
+    """
+    env = os.environ.get('O2BAND_DATA_DIR')
+    if env:
+        return env
+    if sys.platform.startswith('linux'):
+        return os.path.join(_CURC_SCRATCH, 'data')
+    return os.path.normpath(os.path.join(_HERE, '..', 'data'))
+
+
+def _default_qtpy_dir(data_dir):
+    """Locate the TIPS-2021 QTpy tables.
+
+    Priority: ``O2BAND_QTPY_DIR`` env var > ``<data_dir>/TIPS_2021_PYTHON/QTpy``
+    (how they are staged on CURC) > the in-repo ``src/TIPS_2021_PYTHON/QTpy`` >
+    the first candidate as a best guess (tips2021 raises a clear error if absent).
+    """
+    env = os.environ.get('O2BAND_QTPY_DIR')
+    if env:
+        return env
+    candidates = [os.path.join(data_dir, 'TIPS_2021_PYTHON', 'QTpy'),
+                  os.path.join(_HERE, 'TIPS_2021_PYTHON', 'QTpy')]
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
+    return candidates[0]
 
 
 # ----------------------------------------------------------------------------- #
@@ -81,6 +140,7 @@ class O2BandConfig:
                  Ncpu='auto',
                  data_dir=None,
                  out_dir=None,
+                 qtpy_dir=None,
                  mcarats_exe_env='MCARATS_V010_EXE'):
 
         self.bands = tuple(bands)
@@ -99,8 +159,9 @@ class O2BandConfig:
         self.solver = str(solver)
         self.Ncpu = Ncpu
 
-        self.data_dir = data_dir or os.path.join(_HERE, '..', 'data')
-        self.out_dir = out_dir or os.path.join(_HERE, '..', 'out')
+        self.data_dir = data_dir or _default_data_dir()
+        self.out_dir = out_dir or _default_out_dir()
+        self.qtpy_dir = qtpy_dir or _default_qtpy_dir(self.data_dir)
 
         self.fname_hitran = os.path.join(self.data_dir, 'hitran2020_lines.txt')
         self.fname_afgl = os.path.join(self.data_dir, 'afglms.dat')
@@ -135,6 +196,11 @@ class O2BandConfig:
             reflectance_def='rho = pi*I/(mu0*F0) = pi*R_raw/mu0',
             solar_source='CU_composite_solar.dat (F0 folded post-RT)',
             mcarats_exe=self.mcarats_exe, mcarats_version='v0.10.4',
+            er3t_home=os.environ.get('ER3T_HOME', ''),
+            data_dir=os.path.abspath(self.data_dir),
+            qtpy_dir=os.path.abspath(self.qtpy_dir),
+            output_dir=os.path.abspath(self.out_dir),
+            platform=sys.platform,
             git_commit=_git_commit(_HERE),
             inputs=dict(hitran=_file_id(self.fname_hitran),
                         afgl=_file_id(self.fname_afgl),
@@ -158,7 +224,7 @@ class O2BandSim:
 
         self.atm = afgl_atmosphere(cfg.fname_afgl, z_top=cfg.z_top)
         self.solar = solar_cu(cfg.fname_solar)
-        self.tips = tips2021()
+        self.tips = tips2021(cfg.qtpy_dir)
         self.mca_atm = mca_atm_lbl(self.atm)
 
     # --- absorption: build once per band, cache to disk ----------------------
@@ -252,22 +318,69 @@ class O2BandSim:
         os.replace(tmp, fout)
 
     # --- full loop -----------------------------------------------------------
-    def run(self, overwrite=False, verbose=True):
-        done = []
+    # --- deterministic flat list of work units (for sharding) ----------------
+    def _work_units(self):
+        """Ordered list of (band, absb, idx_chunk, ic, nchunk, sza, alb) units.
+
+        The order is fixed and identical in every process (band -> chunk -> sza ->
+        albedo), so a stride ``global_index % ntasks == task_id`` partitions the
+        units into non-overlapping shards without any inter-task coordination.
+        Absorption is loaded once per band from the (cached) pickle.
+        """
+        units = []
         for band in self.cfg.bands:
             absb = self.absorption(band)
             chunks = list(self._chunks(absb))
-            for sza in self.cfg.szas:
-                for alb in self.cfg.albedos:
-                    for ic, idx_chunk in enumerate(chunks):
-                        t0 = time.time()
-                        fout, status = self.run_chunk(band, absb, idx_chunk, sza, alb,
-                                                       overwrite=overwrite)
-                        if verbose:
-                            print('[%s sza%2.0f alb%.2f] chunk %d/%d %s  %.1fs  %s'
-                                  % (band, sza, alb, ic + 1, len(chunks), status,
-                                     time.time() - t0, os.path.basename(fout)))
-                        done.append(fout)
+            for ic, idx_chunk in enumerate(chunks):
+                for sza in self.cfg.szas:
+                    for alb in self.cfg.albedos:
+                        units.append((band, absb, idx_chunk, ic, len(chunks), sza, alb))
+        # Order by a stable digest so a plain index stride (run's shard filter)
+        # is BOTH size-balanced (stride property, differs by <=1 across shards)
+        # AND geometry/wavelength-interleaved (digest scrambles the nested loop
+        # order, so no shard ends up all-slow-SZA).  md5, not the salted builtin
+        # hash, so every array task derives the identical order.
+        units.sort(key=lambda u: hashlib.md5(
+            ('%s|%d|%d|%.4f|%.4f' % (u[0], int(u[2][0]), int(u[2][-1]), u[5], u[6])
+             ).encode()).hexdigest())
+        return units
+
+    def prep(self, verbose=True):
+        """Build + cache the absorption object for every band (no RT).  Run once
+        before a job array so tasks load the cache instead of racing to write it."""
+        out = []
+        for band in self.cfg.bands:
+            t0 = time.time()
+            self.absorption(band)
+            out.append(band)
+            if verbose:
+                print('[prep] absorption cached for %s  %.1fs' % (band, time.time() - t0))
+        return out
+
+    def run(self, overwrite=False, shard=None, verbose=True):
+        """Run work units.  ``shard=(task_id, ntasks)`` runs only the units this
+        task owns -- a stride over the digest-ordered unit list, so shards are
+        size-balanced and geometry-interleaved (job-array mode); ``None`` runs
+        all of them."""
+        if shard is not None:
+            task_id, ntasks = int(shard[0]), int(shard[1])
+            if not (0 <= task_id < ntasks):
+                raise ValueError('shard task_id %d out of range for ntasks %d'
+                                 % (task_id, ntasks))
+        units = self._work_units()
+        done = []
+        for gidx, (band, absb, idx_chunk, ic, nchunk, sza, alb) in enumerate(units):
+            if shard is not None and gidx % ntasks != task_id:
+                continue
+            t0 = time.time()
+            fout, status = self.run_chunk(band, absb, idx_chunk, sza, alb,
+                                          overwrite=overwrite)
+            if verbose:
+                tag = '' if shard is None else '[shard %d/%d gu%d] ' % (task_id, ntasks, gidx)
+                print('%s[%s sza%2.0f alb%.2f] chunk %d/%d %s  %.1fs  %s'
+                      % (tag, band, sza, alb, ic + 1, nchunk, status,
+                         time.time() - t0, os.path.basename(fout)))
+            done.append(fout)
         return done
 
     # --- stitch chunk files into per-band + merged HDF5 ----------------------
@@ -418,11 +531,86 @@ def _git_commit(path):
         return 'unknown'
 
 
+def _build_cli():
+    import argparse
+    p = argparse.ArgumentParser(
+        description='Phase-1 O2 A/B-band line-by-line RT benchmark driver.')
+    p.add_argument('--bands', nargs='+', default=None,
+                   help="bands to run (default frozen: o2a o2b)")
+    p.add_argument('--szas', nargs='+', type=float, default=None,
+                   help='solar zenith angles, deg (default 0 30 60)')
+    p.add_argument('--albedos', nargs='+', type=float, default=None,
+                   help='Lambertian albedos (default 0.0 0.1)')
+    p.add_argument('--wvl-range', nargs=2, type=float, default=None,
+                   metavar=('A', 'B'), help='air-nm sub-window (default: full band)')
+    p.add_argument('--photons', type=float, default=None, help='photons per g-point')
+    p.add_argument('--nrun', type=int, default=None, help='independent MC runs')
+    p.add_argument('--chunk-size', type=int, default=None, help='g-points per chunk')
+    p.add_argument('--z-top', type=float, default=None, help='top altitude, km')
+    p.add_argument('--ncpu', default=None,
+                   help="cores for MCARaTS ('auto' or an int; default auto)")
+    p.add_argument('--out-dir', default=None,
+                   help='output base (default: $O2BAND_OUT_DIR or scratch on Linux)')
+    p.add_argument('--test', action='store_true',
+                   help='quick prototype: narrow window, few photons (sanity run)')
+    p.add_argument('--overwrite', action='store_true',
+                   help='recompute chunks even if a valid file exists')
+    p.add_argument('--no-assemble', action='store_true',
+                   help='run chunks only; skip the per-band/merged HDF5 assembly')
+    p.add_argument('--stage', choices=('all', 'prep', 'run', 'assemble'),
+                   default='all',
+                   help="pipeline stage (job-array mode): 'prep' caches absorption, "
+                        "'run' executes work units (use with --shard), 'assemble' "
+                        "stitches chunks; default 'all' = prep+run+assemble locally")
+    p.add_argument('--shard', nargs=2, type=int, default=None,
+                   metavar=('TASK_ID', 'NTASKS'),
+                   help='run only work units with global_index %% NTASKS == TASK_ID '
+                        '(SLURM job-array sharding); implies stage run, no assemble')
+    return p
+
+
 if __name__ == '__main__':
-    # quick prototype: tiny window, small photon count
-    cfg = O2BandConfig(bands=('o2a',), szas=(30.0,), albedos=(0.0, 0.1),
-                       wvl_range=(763.20, 763.30), photons=1e4, Nrun=2,
-                       chunk_size=50)
+    args = _build_cli().parse_args()
+
+    # --test presets: tiny window / small photon count for a fast end-to-end check
+    kw = {}
+    if args.test:
+        kw.update(bands=('o2a',), szas=(30.0,), albedos=(0.0, 0.1),
+                  wvl_range=(763.20, 763.30), photons=1.0e4, Nrun=2, chunk_size=50)
+
+    # explicit CLI flags override the presets / frozen defaults
+    if args.bands is not None:       kw['bands'] = tuple(args.bands)
+    if args.szas is not None:        kw['szas'] = tuple(args.szas)
+    if args.albedos is not None:     kw['albedos'] = tuple(args.albedos)
+    if args.wvl_range is not None:   kw['wvl_range'] = tuple(args.wvl_range)
+    if args.photons is not None:     kw['photons'] = args.photons
+    if args.nrun is not None:        kw['Nrun'] = args.nrun
+    if args.chunk_size is not None:  kw['chunk_size'] = args.chunk_size
+    if args.z_top is not None:       kw['z_top'] = args.z_top
+    if args.out_dir is not None:     kw['out_dir'] = args.out_dir
+    if args.ncpu is not None:
+        kw['Ncpu'] = args.ncpu if args.ncpu == 'auto' else int(args.ncpu)
+
+    # --shard implies the 'run' stage of a job array (no assemble in the task)
+    stage = args.stage
+    shard = tuple(args.shard) if args.shard is not None else None
+    if shard is not None and stage == 'all':
+        stage = 'run'
+
+    cfg = O2BandConfig(**kw)
+    print('[sim_o2band] stage=%s shard=%s out_dir=%s bands=%s szas=%s albedos=%s '
+          'wvl_range=%s photons=%g Nrun=%d Ncpu=%s'
+          % (stage, shard, cfg.out_dir, cfg.bands, cfg.szas, cfg.albedos,
+             cfg.wvl_range, cfg.photons, cfg.Nrun, cfg.Ncpu))
     sim = O2BandSim(cfg)
-    sim.run()
-    sim.assemble()
+
+    if stage == 'prep':
+        sim.prep()
+    elif stage == 'run':
+        sim.run(overwrite=args.overwrite, shard=shard)
+    elif stage == 'assemble':
+        sim.assemble()
+    else:  # 'all' -- local end-to-end
+        sim.run(overwrite=args.overwrite)
+        if not args.no_assemble:
+            sim.assemble()

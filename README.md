@@ -73,13 +73,19 @@ deviation from the prescribed settings is flagged there.
 o2band_sim/
 ├── PLAN.md                     # scientific + architectural blueprint (read this)
 ├── README.md
-├── data/                       # prescribed inputs (not committed — see below)
+├── CURC_NOTES.md               # CURC/Blanca deployment: env, scratch paths, batch runs
+├── setup_env.sh                # env helper (ER3T_HOME, MCARaTS, data/out paths)
+├── curc_shell_blanca_o2band.sh # single-node SBATCH runner        (CURC — see CURC_NOTES.md)
+├── curc_stage_blanca_o2band.sh # parametrized prep|run|assemble stage runner   (CURC)
+├── submit_o2band_array.sh      # submits the parallel prep->array->assemble pipeline (CURC)
+├── data/                       # prescribed inputs (not committed; provided separately)
 │   ├── hitran2020_lines.txt    # HITRAN 2020 O2 + H2O lines (160-col .par format)
 │   ├── afglms.dat              # AFGL mid-latitude-summer profile
-│   └── CU_composite_solar.dat  # CU composite solar reference spectrum
+│   ├── CU_composite_solar.dat  # CU composite solar reference spectrum
+│   └── TIPS_2021_PYTHON/QTpy/  # TIPS-2021 partition sums (provided separately)
 ├── src/
-│   ├── sim_o2band.py           # driver: config, cached absorption, chunked RT, assemble
-│   ├── TIPS_2021_PYTHON/QTpy/  # TIPS-2021 partition sums (provided separately)
+│   ├── sim_o2band.py           # driver: config, cached absorption, chunked/sharded RT, assemble
+│   ├── noise_report.py         # per-(SZA,albedo) MC-noise report / threshold gate
 │   └── util/
 │       ├── atmosphere.py       # AFGL profile -> layers (p, T, gas columns)
 │       ├── absorption.py       # HITRAN parse + Voigt LBL -> per-layer O2/H2O OT; Rayleigh OT
@@ -98,18 +104,36 @@ o2band_sim/
 ## Requirements
 
 - Python 3 with **numpy**, **scipy**, **h5py**.
-- **er3t** (provides the MCARaTS Python interface). Expected at
-  `/Users/yuch8913/programming/er3t/er3t` (adjust `sys.path` / `_ER3T` in
-  `sim_o2band.py` if elsewhere).
+- **er3t** (provides the MCARaTS Python interface). The driver first tries a plain
+  `import er3t` (e.g. an editable `pip install -e` in the active conda env); if that
+  fails it adds **`$ER3T_HOME`** — the directory *containing* the `er3t` package —
+  to `sys.path`:
+  ```bash
+  export ER3T_HOME=/path/to/er3t          # the dir that holds the er3t/ package
+  ```
 - **MCARaTS v0.10.4** compiled executable, located via the environment variable
   **`MCARATS_V010_EXE`**:
   ```bash
   export MCARATS_V010_EXE=/path/to/mcarats/v0.10.4/src/mcarats
   ```
 
-The prescribed input data files (`data/`), the TIPS-2021 partition sums
-(`src/TIPS_2021_PYTHON/QTpy/`), and the compiled RT engine are not part of this
-repository and must be provided separately.
+The prescribed input data files, the TIPS-2021 partition sums
+(`TIPS_2021_PYTHON/QTpy/`), and the compiled RT engine are not part of this
+repository and must be provided separately. Their locations are configurable via
+environment variables:
+
+| variable | what | default |
+|---|---|---|
+| `O2BAND_DATA_DIR` | prescribed inputs (HITRAN/AFGL/solar) | in-repo `data/` |
+| `O2BAND_QTPY_DIR` | TIPS-2021 QTpy tables | `$O2BAND_DATA_DIR/TIPS_2021_PYTHON/QTpy`, else in-repo `src/TIPS_2021_PYTHON/QTpy/` |
+| `O2BAND_OUT_DIR` | simulation + result files | in-repo `out/` |
+| `ER3T_HOME` | dir containing the `er3t` package | (unset — uses an installed er3t) |
+| `MCARATS_V010_EXE` | MCARaTS v0.10.4 executable | (unset — required) |
+
+On Linux the data/output defaults instead point at a scratch base rather than the
+in-repo dirs. For the CURC/Blanca deployment (concrete scratch paths, module
+loads, conda env, and batch/array run scripts), see
+[`CURC_NOTES.md`](CURC_NOTES.md).
 
 ---
 
@@ -146,8 +170,21 @@ sim.assemble()             # per-band o2a.h5 / o2b.h5 + merged o2band_benchmark.
 > **macOS note.** `sim.run()` uses `multiprocessing.Pool`, so it must be called
 > under an `if __name__ == '__main__':` guard.
 
-Running `python src/sim_o2band.py` directly executes a small prototype
-(narrow window, low photon count) to validate the full chain quickly.
+#### Command-line interface
+
+`sim_o2band.py` also has a CLI (used by the CURC batch runner):
+
+```bash
+python src/sim_o2band.py --test                    # fast prototype (narrow window, low photons)
+python src/sim_o2band.py                            # frozen Phase-1 grid (both bands)
+python src/sim_o2band.py --bands o2a --wvl-range 763.20 763.30 --photons 1e4 --nrun 2
+python src/sim_o2band.py --ncpu 16 --overwrite      # force recompute on 16 cores
+python src/sim_o2band.py --help                     # all flags
+```
+
+Flags: `--bands`, `--szas`, `--albedos`, `--wvl-range A B`, `--photons`, `--nrun`,
+`--chunk-size`, `--z-top`, `--ncpu`, `--out-dir`, `--test`, `--overwrite`,
+`--no-assemble`. Explicit flags override the `--test` presets and frozen defaults.
 
 Key knobs:
 
@@ -166,6 +203,10 @@ Every work unit `(band, SZA, albedo, chunk)` writes a deterministic, lattice-
 anchored chunk file with an atomic (tmp+rename) write. A valid existing chunk is
 skipped, so an interrupted run resumes by simply rerunning; `assemble()` stitches
 the chunk files into the final HDF5s.
+
+> **Running on a cluster.** For the CURC/Blanca deployment — environment setup,
+> scratch paths, the single-node SBATCH runner, and the parallel job-array
+> pipeline — see [`CURC_NOTES.md`](CURC_NOTES.md).
 
 ---
 

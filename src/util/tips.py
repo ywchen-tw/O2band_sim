@@ -20,9 +20,12 @@ import numpy as np
 
 __all__ = ['tips2021']
 
-# default location of the TIPS-2021 QTpy tables (src/TIPS_2021_PYTHON/QTpy)
+# default location of the TIPS-2021 QTpy tables.  Honors O2BAND_QTPY_DIR (set on
+# CURC to the scratch data copy); otherwise the in-repo src/TIPS_2021_PYTHON/QTpy.
 _HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_QTPY_DIR = os.path.normpath(os.path.join(_HERE, '..', 'TIPS_2021_PYTHON', 'QTpy'))
+DEFAULT_QTPY_DIR = os.environ.get(
+    'O2BAND_QTPY_DIR',
+    os.path.normpath(os.path.join(_HERE, '..', 'TIPS_2021_PYTHON', 'QTpy')))
 
 T_REF = 296.0  # HITRAN reference temperature (K)
 
