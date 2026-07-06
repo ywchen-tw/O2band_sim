@@ -96,7 +96,16 @@ def run(our_h5, band, streams, workdir, n_wvl, ot_max):
     atm_file = '%s/data/atmmod/afglms.dat' % LRT
 
     with h5py.File(our_h5, 'r') as f:
-        g = f[band] if band in f else f
+        if band in f and isinstance(f[band], h5py.Group):
+            g = f[band]                                  # merged file: pick the band group
+        else:
+            g = f                                        # per-band file: datasets at root
+            file_band = f.attrs.get('band')              # guard against band/file mismatch
+            if file_band is not None and str(file_band) != band:
+                raise ValueError(
+                    "band mismatch: --band %s but %s is band '%s'. Point --band/OUR_H5 "
+                    "at the right file (e.g. the o2b.h5 for --band o2b)."
+                    % (band, os.path.basename(our_h5), file_band))
         wvl = g['wvl'][:]; sza = g['sza'][:]; alb = g['albedo'][:]
         ref = g['reflectance'][:]
         o2c = g['optical_thickness/o2_column'][:]

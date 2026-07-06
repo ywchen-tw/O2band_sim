@@ -26,8 +26,9 @@ export PYTHONPATH="$PROJECT_ROOT/src:$PYTHONPATH"
 # libRadtran install used by the arcsix workflow (already the env default here)
 export LIBRADTRAN_V2_DIR="${LIBRADTRAN_V2_DIR:-/projects/yuch8913/wen_soft/libRadtran-2.0.6}"
 
-# Compare against a produced band file (default: the z120 production o2a).
-OUR_H5="${OUR_H5:-${O2BAND_OUT_DIR:-/scratch/alpine/yuch8913/O2band_sim}/z120_p1e6_n3/o2a.h5}"
+# Band to check (o2a|o2b), and its produced per-band file. OUR_H5 defaults to the
+# z120 production file for the chosen BAND, so `BAND=o2b` uses o2b.h5.
 BAND="${BAND:-o2a}"
+OUR_H5="${OUR_H5:-${O2BAND_OUT_DIR:-/scratch/alpine/yuch8913/O2band_sim}/z120_p1e6_n3/${BAND}.h5}"
 echo "[lrt] uvspec=$LIBRADTRAN_V2_DIR/bin/uvspec  our=$OUR_H5  band=$BAND  n_wvl=${N_WVL:-6}"
 python src/eval_lrt.py "$OUR_H5" --band "$BAND" --streams "${STREAMS:-16}" --n-wvl "${N_WVL:-6}"
