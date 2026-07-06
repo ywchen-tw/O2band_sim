@@ -70,14 +70,20 @@ def disort_reflectivity(wvl, sza, alb, atm_file, streams, workdir):
     return float(vals[1])                       # uu = reflectivity
 
 
-def select_windows(wvl, o2c, n, ot_max):
+def select_windows(wvl, o2c, n, ot_max, solar_nm=0.1):
     """Indices of ~n window wavelengths spanning the band: the lowest-O2-OT grid
-    point in each of n equal wavelength segments, keeping only points with
-    O2 column OT < ot_max (so each is a genuine near-Rayleigh window)."""
+    point in each of n equal segments, kept only if O2 column OT < ot_max.
+
+    Candidates are restricted to grid points aligned to the solar-flux file
+    resolution (``solar_nm``, kurudz_0.1nm.dat -> 0.1 nm) because uvspec requires
+    the requested wavelength to exist in the extraterrestrial solar file.  Our
+    0.001 nm grid contains those 0.1 nm points exactly, so MCARaTS and DISORT are
+    compared at the identical wavelength."""
+    aligned = np.abs(wvl - np.round(wvl / solar_nm) * solar_nm) < 1e-4
     edges = np.linspace(wvl[0], wvl[-1], n + 1)
     idx = []
     for a, b in zip(edges[:-1], edges[1:]):
-        seg = np.where((wvl >= a) & (wvl < b + 1e-9))[0]
+        seg = np.where((wvl >= a) & (wvl < b + 1e-9) & aligned)[0]
         if seg.size:
             k = seg[int(np.argmin(o2c[seg]))]
             if o2c[k] < ot_max:
