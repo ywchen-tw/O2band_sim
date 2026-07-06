@@ -8,8 +8,7 @@ verdicts** (EVAL_PLAN §5).
 
 Run/context: AFGL mid-latitude-summer, z_top 120 km, prescribed HITRAN 2020,
 Voigt, air wavelengths.  Reflectance figures use the z120/P=1e6/Nrun=3 production
-output (currently SZA 30° / albedo 0 only; full grid pending).  Generated
-2026-07-06.
+output (full grid: SZA 0/30/60° × albedo 0/0.1).  Generated 2026-07-06.
 
 The participant-model ensemble (KNMI intercomparison) was **not available**, so
 this evaluation rests on independent public references and local model reruns.
@@ -25,13 +24,14 @@ this evaluation rests on independent public references and local model reruns.
 | 3 | O2 absorber amount | canonical 0.2095 dry-air VMR | **−0.17%** (H2O dilution) | `eval_band_metrics.py` |
 | 4 | O2 line-by-line engine | HAPI, **matched** HITRAN 2020 | **~0.1–0.5%** | `eval_hapi_local.py` |
 | 5 | O2 A-band continuum | OCO ABSCO v5.2 | **8–9× low** → ~0.01 OT (CIA+line-mixing, omitted by design) | `eval_absco.py` |
-| 6 | RT solver + reflectance convention | libRadtran / DISORT | **0.71%** | `eval_lrt.py` |
+| 6 | RT solver + reflectance convention | libRadtran / DISORT | **<1% (all 6 geometries; rel RMS ~0.45%)** | `eval_lrt.py` |
 | — | *(context)* O2A line intensities | HAPI online = HITRAN 2024 | **+1.3%** (edition change, not a defect) | `eval_hapi.py` |
 
 **Bottom line:** absorption (line engine) and scattering (Rayleigh) match
 independent references to well under 1%; the RT transport and reflectance
-convention match an independent solver to 0.71%.  The only large differences are
-the two documented Phase-1 choices (§5, §7 below), both now quantified.
+convention match an independent solver to <1% across all six prescribed
+geometries.  The only large differences are the two documented Phase-1 choices
+(§5, §7 below), both now quantified.
 
 ---
 
@@ -119,16 +119,32 @@ ABSCO here covers only the A-band; O2B is not in this table.
 
 At the band window (757.0 nm, O2 OT ≈ 0 → pure Rayleigh + Lambertian), our
 Monte-Carlo (MCARaTS) reflectance vs libRadtran's discrete-ordinate solver
-(DISORT, 16 streams), both using ρ = πI/(μ₀F₀):
+(DISORT, 16 streams), both using ρ = πI/(μ₀F₀), across all six prescribed
+geometries (full production grid):
 
-| window | SZA | albedo | MCARaTS | DISORT | diff |
-|---|---|---|---|---|---|
-| 757.0 nm | 30° | 0.0 | 0.01003 | 0.01010 | **−0.71%** |
+| SZA | albedo | MCARaTS | DISORT | diff |
+|---|---|---|---|---|
+| 0° | 0.0 | 0.00983 | 0.00992 | −0.82% |
+| 0° | 0.1 | 0.10746 | 0.10754 | −0.08% |
+| 30° | 0.0 | 0.01003 | 0.01010 | −0.71% |
+| 30° | 0.1 | 0.10760 | 0.10753 | +0.07% |
+| 60° | 0.0 | 0.01273 | 0.01276 | −0.17% |
+| 60° | 0.1 | 0.10919 | 0.10911 | +0.07% |
 
-Two fully independent solvers agree to 0.71% on the Rayleigh continuum.  Crucially
-this also validates the **reflectance convention**: a wrong factor would appear as
-~15% (a missing μ₀ = cos 30°) or ~3× (a missing π), not 0.71%.  Confirms
-`ρ = π·R_raw/μ₀` against an independent code (corroborating V7).
+Two fully independent solvers agree to **<1% at every geometry** (relative RMS
+≈ 0.45%).  This validates:
+
+- **RT transport** — MC vs discrete-ordinate agree on the Rayleigh continuum.  The
+  small systematic (MCARaTS ~0.1–0.8% below DISORT at albedo 0, <0.1% at 0.1)
+  lives only in the faint atmospheric-path reflectance (~0.01), where DISORT's
+  16-stream angular treatment / MC noise / Rayleigh depolarization differ most; it
+  vanishes once the Lambertian surface dominates.
+- **Reflectance convention, across SZA** — at albedo 0 the pure-Rayleigh ρ rises
+  with SZA (0.00983 → 0.01003 → 0.01273) in *both* solvers, tracking to <1%.  A
+  missing μ₀ = cos(SZA) would diverge at SZA 60° (μ₀ = 0.5 → ~2×); it is −0.17%.
+  So `ρ = π·R_raw/μ₀` is confirmed across the grid (corroborating V7).
+- **Albedo** — ρ increases 0.01 → 0.107 (0 → 0.1 albedo, monotonic); at albedo 0.1
+  the two solvers agree to <0.1% (surface term handled identically).
 
 ---
 
@@ -145,12 +161,8 @@ Everything else matches independent references to <1%.
 ## 8. Caveats / not covered
 
 - **Participant ensemble** (KNMI intercomparison models) unavailable → not compared.
-- **Reflectance grid coverage**: the DISORT check (#6) is one geometry (SZA 30° /
-  albedo 0) because the production grid is partial; the μ₀ factor is confirmed at
-  SZA 30° only.  Re-running `eval_lrt.py` after the full grid
-  (`submit_o2band_array.sh`) extends it to all SZA/albedo and adds the
-  albedo-monotonicity check.
 - **B-band RT / ABSCO**: ABSCO v5.2 has no O2B table; the DISORT check used O2A.
+  A DISORT check of the O2B window would extend #6 to the B-band (analogous run).
 - Reflectance band metrics (continuum ρ, equivalent width) are geometry/surface-
   dependent with no single clean published value — reported in `eval_metrics.py`
   for reference, not differenced here.
