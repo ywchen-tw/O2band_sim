@@ -24,7 +24,7 @@ this evaluation rests on independent public references and local model reruns.
 | 3 | O2 absorber amount | canonical 0.2095 dry-air VMR | **−0.17%** (H2O dilution) | `eval_band_metrics.py` |
 | 4 | O2 line-by-line engine | HAPI, **matched** HITRAN 2020 | **~0.1–0.5%** | `eval_hapi_local.py` |
 | 5 | O2 A-band continuum | OCO ABSCO v5.2 | **8–9× low** → ~0.01 OT (CIA+line-mixing, omitted by design) | `eval_absco.py` |
-| 6 | RT solver + reflectance convention | libRadtran / DISORT | **<1% (9 wvl × 6 geometries = 54 runs; rel RMS 0.31%, corr 1.0)** | `eval_lrt.py` |
+| 6 | RT solver + reflectance convention | libRadtran / DISORT | **<0.4% rel RMS** — window (rRMS 0.31%) + in-band injected OD 0.05–3, both bands (rRMS 0.29/0.36%), corr 1.0 | `eval_lrt.py`, `eval_lrt_inband.py` |
 | — | *(context)* O2A line intensities | HAPI online = HITRAN 2024 | **+1.3%** (edition change, not a defect) | `eval_hapi.py` |
 
 **Bottom line:** absorption (line engine) and scattering (Rayleigh) match
@@ -117,10 +117,15 @@ ABSCO here covers only the A-band; O2B is not in this table.
 
 ## 6. RT solver + reflectance convention vs libRadtran/DISORT
 
-At **9 window wavelengths spanning 757.0–771.5 nm** (each O2 OT ≲ 0.001, i.e. pure
-Rayleigh + Lambertian) × all 6 prescribed geometries = **54 runs**, our Monte-Carlo
-(MCARaTS) reflectance vs libRadtran's discrete-ordinate solver (DISORT, 16 streams),
-both using ρ = πI/(μ₀F₀):
+Two independent solvers, Monte-Carlo (MCARaTS) and discrete-ordinate (DISORT, 16
+streams), both using ρ = πI/(μ₀F₀), compared two ways: **(6a)** on the pure-Rayleigh
+window (transport + convention) and **(6b)** with gas absorption injected (the
+absorption+scattering coupling).
+
+### 6a. Window wavelengths (pure Rayleigh)
+
+At **9 window wavelengths spanning 757.0–771.5 nm** (each O2 OT ≲ 0.001) × all 6
+prescribed geometries = **54 runs**:
 
 **Overall: relative RMS 0.31%, correlation 1.00000, every point within ±0.82%.**
 
@@ -152,6 +157,32 @@ This validates:
 - **Albedo** — ρ increases 0.01 → 0.107 (0 → 0.1 albedo, monotonic); at albedo 0.1
   the two solvers agree to <0.3% (surface term handled identically).
 
+### 6b. In-band, with gas absorption injected (absorption+scattering coupling)
+
+Windows validate transport but not the solver's handling of *coupled* absorption
+and scattering — the point of the O2 bands.  To test that, our per-layer gas
+absorption OT (o2_layer + h2o_layer) was injected into DISORT as a pure-absorbing
+``aerosol_file tau`` profile (ssa = 0) on top of libRadtran's Rayleigh, so both
+solvers see the identical scene.  6 wavelengths spanning **column gas OD ≈ 0.05–3**
+× 6 geometries = 36 runs per band:
+
+| band | col-OD range | overall rel RMS | corr | notes |
+|---|---|---|---|---|
+| O2A | 0.05 – 3.1 | **0.29%** | 1.00000 | max \|diff\| ~1.0% only where MC noise ~0.5% |
+| O2B | 0.05 – 3.3 | **0.36%** | 1.00000 | max \|diff\| ~0.8% only where MC noise ~0.4% |
+
+MC and discrete-ordinate agree to **<0.4% RMS with absorption and scattering
+coupled**, over the full OD range and all geometries, in both bands.  Both solvers
+track the absorption darkening (e.g. O2A: ρ 0.0088 at OD 0.10 → 0.0033 at OD 3.1)
+and the two-way attenuation of the Lambertian surface term at albedo 0.1.  The
+few ~1% points all coincide with comparable MC noise (0.3–0.5%), so they are
+noise-consistent, not solver disagreement.  The injected optical depth is exact
+(per-layer aerosol τ sums to the column OT), and the absence of any systematic
+offset confirms no wavelength mis-scaling of the injected profile.
+
+**Together 6a+6b validate the RT solver + convention across the full reflectance
+range — window continuum through saturating line absorption — in both bands.**
+
 ---
 
 ## 7. Summary of the two Phase-1 differences (both by design)
@@ -167,8 +198,8 @@ Everything else matches independent references to <1%.
 ## 8. Caveats / not covered
 
 - **Participant ensemble** (KNMI intercomparison models) unavailable → not compared.
-- **B-band RT / ABSCO**: ABSCO v5.2 has no O2B table; the DISORT check used O2A.
-  A DISORT check of the O2B window would extend #6 to the B-band (analogous run).
+- **ABSCO band coverage**: ABSCO v5.2 has no O2B table, so check #5 (CIA/line-mixing
+  continuum) is O2A only.  The DISORT solver check (#6) covers **both** bands.
 - Reflectance band metrics (continuum ρ, equivalent width) are geometry/surface-
   dependent with no single clean published value — reported in `eval_metrics.py`
   for reference, not differenced here.
@@ -177,5 +208,6 @@ Everything else matches independent references to <1%.
 
 Each row of the scorecard is produced by the named script under `src/`:
 `eval_rayleigh.py`, `eval_band_metrics.py`, `eval_hapi_local.py` / `eval_hapi.py`
-(via `curc_hapi_eval.sh`), `eval_absco.py`, `eval_lrt.py` (via `curc_lrt_eval.sh`).
+(via `curc_hapi_eval.sh`), `eval_absco.py`, and for #6 `eval_lrt.py` (window) +
+`eval_lrt_inband.py` (in-band, `INBAND=1`) via `curc_lrt_eval.sh`.
 `eval_metrics.py` provides the shared band-metric + `diff_stats` engine.
