@@ -29,5 +29,5 @@ export LIBRADTRAN_V2_DIR="${LIBRADTRAN_V2_DIR:-/projects/yuch8913/wen_soft/libRa
 # Compare against a produced band file (default: the z120 production o2a).
 OUR_H5="${OUR_H5:-${O2BAND_OUT_DIR:-/scratch/alpine/yuch8913/O2band_sim}/z120_p1e6_n3/o2a.h5}"
 BAND="${BAND:-o2a}"
-echo "[lrt] uvspec=$LIBRADTRAN_V2_DIR/bin/uvspec  our=$OUR_H5  band=$BAND"
-python src/eval_lrt.py "$OUR_H5" --band "$BAND" --streams "${STREAMS:-16}"
+echo "[lrt] uvspec=$LIBRADTRAN_V2_DIR/bin/uvspec  our=$OUR_H5  band=$BAND  n_wvl=${N_WVL:-6}"
+python src/eval_lrt.py "$OUR_H5" --band "$BAND" --streams "${STREAMS:-16}" --n-wvl "${N_WVL:-6}"

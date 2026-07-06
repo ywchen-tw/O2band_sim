@@ -8,11 +8,13 @@ the reflectance -- validating the RT *transport* and the reflectance convention
 (rho = pi*I/(mu0*F0)) independently of the absorption physics.
 
 To keep it a solver check (not an absorption-model check), the comparison is done
-at the band's **window wavelength** (grid point of minimum O2 optical depth) with
-libRadtran molecular absorption switched OFF (``no_absorption``): a pure
-Rayleigh + Lambertian scene, which our MCARaTS window point also approximates
+at several **window wavelengths spanning the band** (the lowest-O2-OT grid point
+in each of n segments; the O2 A-band has thousands of points with OT ~ 0) with
+libRadtran molecular absorption switched OFF (``no_absorption mol``): a pure
+Rayleigh + Lambertian scene, which our MCARaTS window points also approximate
 (O2 OT ~ 0).  uvspec is run with ``output_quantity reflectivity`` so its ``uu``
-output IS rho, matching ours.
+output IS rho, matching ours.  Testing multiple wavelengths checks the solver +
+convention across the band's Rayleigh-OD range, not just one point.
 
 uvspec input is written directly (no wrapper), then run via subprocess.  It needs
 its runtime libs (GSL/NetCDF) + $LIBRADTRAN_V2_DIR, so run through
@@ -68,7 +70,22 @@ def disort_reflectivity(wvl, sza, alb, atm_file, streams, workdir):
     return float(vals[1])                       # uu = reflectivity
 
 
-def run(our_h5, band, streams, workdir):
+def select_windows(wvl, o2c, n, ot_max):
+    """Indices of ~n window wavelengths spanning the band: the lowest-O2-OT grid
+    point in each of n equal wavelength segments, keeping only points with
+    O2 column OT < ot_max (so each is a genuine near-Rayleigh window)."""
+    edges = np.linspace(wvl[0], wvl[-1], n + 1)
+    idx = []
+    for a, b in zip(edges[:-1], edges[1:]):
+        seg = np.where((wvl >= a) & (wvl < b + 1e-9))[0]
+        if seg.size:
+            k = seg[int(np.argmin(o2c[seg]))]
+            if o2c[k] < ot_max:
+                idx.append(int(k))
+    return sorted(set(idx))
+
+
+def run(our_h5, band, streams, workdir, n_wvl, ot_max):
     os.makedirs(workdir, exist_ok=True)
     atm_file = '%s/data/atmmod/afglms.dat' % LRT
 
@@ -78,22 +95,29 @@ def run(our_h5, band, streams, workdir):
         ref = g['reflectance'][:]
         o2c = g['optical_thickness/o2_column'][:]
 
-    iw = int(np.argmin(o2c)); wl = float(wvl[iw])
+    iws = select_windows(wvl, o2c, n_wvl, ot_max)
     print('RT-solver check: MCARaTS vs libRadtran/DISORT (%d streams)' % streams)
-    print('  window %.4f nm  (O2 column OT = %.4f -> near pure-Rayleigh)\n' % (wl, o2c[iw]))
-    print('  %-5s %-6s | %12s %12s %10s' % ('SZA', 'alb', 'MCARaTS', 'DISORT', 'diff'))
+    print('  %d window wavelengths across %s (O2 OT < %.3g -> near pure-Rayleigh)\n'
+          % (len(iws), band, ot_max))
+    print('  %-9s %-8s %-5s %-6s | %12s %12s %9s'
+          % ('wvl[nm]', 'O2_OT', 'SZA', 'alb', 'MCARaTS', 'DISORT', 'diff'))
 
     a_ours, a_do = [], []
-    for i, s in enumerate(sza):
-        for j, a in enumerate(alb):
-            rho_mc = float(ref[i, j, iw])
-            rho_do = disort_reflectivity(wl, float(s), float(a), atm_file, streams, workdir)
-            a_ours.append(rho_mc); a_do.append(rho_do)
-            print('  %-5.1f %-6.2f | %12.5f %12.5f %+9.2f%%'
-                  % (s, a, rho_mc, rho_do, 100 * (rho_mc / rho_do - 1) if rho_do else np.nan))
+    for iw in iws:
+        wl = float(wvl[iw])
+        for i, s in enumerate(sza):
+            for j, a in enumerate(alb):
+                rho_mc = float(ref[i, j, iw])
+                rho_do = disort_reflectivity(wl, float(s), float(a), atm_file, streams, workdir)
+                a_ours.append(rho_mc); a_do.append(rho_do)
+                print('  %-9.3f %-8.4f %-5.1f %-6.2f | %12.5f %12.5f %+8.2f%%'
+                      % (wl, o2c[iw], s, a, rho_mc, rho_do,
+                         100 * (rho_mc / rho_do - 1) if rho_do else np.nan))
+        print()
 
     st = diff_stats(np.array(a_ours), np.array(a_do))
-    print('\n  overall: n=%d  mean bias=%+.3e  rms=%.3e  rel rms=%.2f%%  corr=%.5f'
+    # albedo-0 subset (faint atmospheric path, where solver differences show most)
+    print('  overall (%d runs): mean bias=%+.3e  rms=%.3e  rel rms=%.2f%%  corr=%.5f'
           % (st['n'], st['mean_bias'], st['rms_diff'],
              100 * st.get('rel_rms', float('nan')), st['corr']))
 
@@ -104,6 +128,10 @@ if __name__ == '__main__':
     p.add_argument('our_h5')
     p.add_argument('--band', default='o2a')
     p.add_argument('--streams', type=int, default=16)
+    p.add_argument('--n-wvl', type=int, default=6,
+                   help='number of window wavelengths across the band (default 6)')
+    p.add_argument('--ot-max', type=float, default=0.02,
+                   help='max O2 column OT for a point to count as a window (default 0.02)')
     p.add_argument('--workdir', default=None)
     args = p.parse_args()
     if not os.path.isfile(args.our_h5):
@@ -112,4 +140,4 @@ if __name__ == '__main__':
         sys.exit('Error [eval_lrt]: uvspec not found under LIBRADTRAN_V2_DIR=%s' % LRT)
     work = args.workdir or os.path.join(
         os.environ.get('O2BAND_OUT_DIR', os.path.join(_HERE, '..', 'out')), 'lrt_eval')
-    run(args.our_h5, args.band, args.streams, work)
+    run(args.our_h5, args.band, args.streams, work, args.n_wvl, args.ot_max)
