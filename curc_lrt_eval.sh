@@ -30,5 +30,12 @@ export LIBRADTRAN_V2_DIR="${LIBRADTRAN_V2_DIR:-/projects/yuch8913/wen_soft/libRa
 # z120 production file for the chosen BAND, so `BAND=o2b` uses o2b.h5.
 BAND="${BAND:-o2a}"
 OUR_H5="${OUR_H5:-${O2BAND_OUT_DIR:-/scratch/alpine/yuch8913/O2band_sim}/z120_p1e6_n3/${BAND}.h5}"
-echo "[lrt] uvspec=$LIBRADTRAN_V2_DIR/bin/uvspec  our=$OUR_H5  band=$BAND  n_wvl=${N_WVL:-6}"
-python src/eval_lrt.py "$OUR_H5" --band "$BAND" --streams "${STREAMS:-16}" --n-wvl "${N_WVL:-6}"
+# INBAND=1 runs the in-band check (injects our per-layer gas OT into DISORT,
+# spanning column gas OD ~0.05-3); default runs the window (pure-Rayleigh) check.
+if [ "${INBAND:-0}" = "1" ]; then
+    echo "[lrt] INBAND  uvspec=$LIBRADTRAN_V2_DIR/bin/uvspec  our=$OUR_H5  band=$BAND"
+    python src/eval_lrt_inband.py "$OUR_H5" --band "$BAND" --streams "${STREAMS:-16}"
+else
+    echo "[lrt] window  uvspec=$LIBRADTRAN_V2_DIR/bin/uvspec  our=$OUR_H5  band=$BAND  n_wvl=${N_WVL:-6}"
+    python src/eval_lrt.py "$OUR_H5" --band "$BAND" --streams "${STREAMS:-16}" --n-wvl "${N_WVL:-6}"
+fi
