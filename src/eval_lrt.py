@@ -8,13 +8,15 @@ the reflectance -- validating the RT *transport* and the reflectance convention
 (rho = pi*I/(mu0*F0)) independently of the absorption physics.
 
 To keep it a solver check (not an absorption-model check), the comparison is done
-at several **window wavelengths spanning the band** (the lowest-O2-OT grid point
-in each of n segments; the O2 A-band has thousands of points with OT ~ 0) with
-libRadtran molecular absorption switched OFF (``no_absorption mol``): a pure
-Rayleigh + Lambertian scene, which our MCARaTS window points also approximate
-(O2 OT ~ 0).  uvspec is run with ``output_quantity reflectivity`` so its ``uu``
-output IS rho, matching ours.  Testing multiple wavelengths checks the solver +
-convention across the band's Rayleigh-OD range, not just one point.
+at several **window wavelengths spanning the band** -- the lowest **total gas
+(O2+H2O) OT** grid point in each of n segments (both bands have thousands of
+points with total OT ~ 0) -- with libRadtran molecular absorption switched OFF
+(``no_absorption mol``): a pure Rayleigh + Lambertian scene our MCARaTS window
+points also approximate.  Filtering on total gas OT (not O2 alone) matters in the
+B-band, where strong H2O lines (e.g. 693.8 nm) have near-zero O2 but absorb in our
+run while the pure-Rayleigh DISORT run does not.  uvspec is run with
+``output_quantity reflectivity`` so its ``uu`` output IS rho, matching ours.
+Multiple wavelengths check the solver + convention across the Rayleigh-OD range.
 
 uvspec input is written directly (no wrapper), then run via subprocess.  It needs
 its runtime libs (GSL/NetCDF) + $LIBRADTRAN_V2_DIR, so run through
@@ -70,13 +72,16 @@ def disort_reflectivity(wvl, sza, alb, atm_file, streams, workdir):
     return float(vals[1])                       # uu = reflectivity
 
 
-def select_windows(wvl, o2c, n, ot_max, solar_nm=0.1):
-    """Indices of ~n window wavelengths spanning the band: the lowest-O2-OT grid
-    point in each of n equal segments, kept only if O2 column OT < ot_max.
+def select_windows(wvl, gas_ot, n, ot_max, solar_nm=0.1):
+    """Indices of ~n window wavelengths spanning the band: the lowest-TOTAL-gas-OT
+    grid point in each of n equal segments, kept only if total gas OT < ot_max.
 
-    Candidates are restricted to grid points aligned to the solar-flux file
-    resolution (``solar_nm``, kurudz_0.1nm.dat -> 0.1 nm) because uvspec requires
-    the requested wavelength to exist in the extraterrestrial solar file.  Our
+    ``gas_ot`` is the total column absorption OT (O2 + H2O) -- filtering on O2
+    alone would admit strong H2O lines (e.g. O2B 693.8 nm, H2O OT ~0.04) where our
+    MCARaTS absorbs but the pure-Rayleigh DISORT run does not, corrupting the
+    solver comparison.  Candidates are restricted to grid points aligned to the
+    solar-flux file resolution (``solar_nm``, kurudz_0.1nm.dat -> 0.1 nm) because
+    uvspec requires the requested wavelength to exist in the solar file; our
     0.001 nm grid contains those 0.1 nm points exactly, so MCARaTS and DISORT are
     compared at the identical wavelength."""
     aligned = np.abs(wvl - np.round(wvl / solar_nm) * solar_nm) < 1e-4
@@ -85,8 +90,8 @@ def select_windows(wvl, o2c, n, ot_max, solar_nm=0.1):
     for a, b in zip(edges[:-1], edges[1:]):
         seg = np.where((wvl >= a) & (wvl < b + 1e-9) & aligned)[0]
         if seg.size:
-            k = seg[int(np.argmin(o2c[seg]))]
-            if o2c[k] < ot_max:
+            k = seg[int(np.argmin(gas_ot[seg]))]
+            if gas_ot[k] < ot_max:
                 idx.append(int(k))
     return sorted(set(idx))
 
@@ -108,14 +113,14 @@ def run(our_h5, band, streams, workdir, n_wvl, ot_max):
                     % (band, os.path.basename(our_h5), file_band))
         wvl = g['wvl'][:]; sza = g['sza'][:]; alb = g['albedo'][:]
         ref = g['reflectance'][:]
-        o2c = g['optical_thickness/o2_column'][:]
+        gas_ot = g['optical_thickness/o2_column'][:] + g['optical_thickness/h2o_column'][:]
 
-    iws = select_windows(wvl, o2c, n_wvl, ot_max)
+    iws = select_windows(wvl, gas_ot, n_wvl, ot_max)
     print('RT-solver check: MCARaTS vs libRadtran/DISORT (%d streams)' % streams)
-    print('  %d window wavelengths across %s (O2 OT < %.3g -> near pure-Rayleigh)\n'
+    print('  %d window wavelengths across %s (total gas OT < %.3g -> near pure-Rayleigh)\n'
           % (len(iws), band, ot_max))
     print('  %-9s %-8s %-5s %-6s | %12s %12s %9s'
-          % ('wvl[nm]', 'O2_OT', 'SZA', 'alb', 'MCARaTS', 'DISORT', 'diff'))
+          % ('wvl[nm]', 'gas_OT', 'SZA', 'alb', 'MCARaTS', 'DISORT', 'diff'))
 
     a_ours, a_do = [], []
     for iw in iws:
@@ -126,7 +131,7 @@ def run(our_h5, band, streams, workdir, n_wvl, ot_max):
                 rho_do = disort_reflectivity(wl, float(s), float(a), atm_file, streams, workdir)
                 a_ours.append(rho_mc); a_do.append(rho_do)
                 print('  %-9.3f %-8.4f %-5.1f %-6.2f | %12.5f %12.5f %+8.2f%%'
-                      % (wl, o2c[iw], s, a, rho_mc, rho_do,
+                      % (wl, gas_ot[iw], s, a, rho_mc, rho_do,
                          100 * (rho_mc / rho_do - 1) if rho_do else np.nan))
         print()
 
@@ -145,8 +150,8 @@ if __name__ == '__main__':
     p.add_argument('--streams', type=int, default=16)
     p.add_argument('--n-wvl', type=int, default=6,
                    help='number of window wavelengths across the band (default 6)')
-    p.add_argument('--ot-max', type=float, default=0.02,
-                   help='max O2 column OT for a point to count as a window (default 0.02)')
+    p.add_argument('--ot-max', type=float, default=0.001,
+                   help='max TOTAL gas (O2+H2O) column OT for a window (default 0.001)')
     p.add_argument('--workdir', default=None)
     args = p.parse_args()
     if not os.path.isfile(args.our_h5):
