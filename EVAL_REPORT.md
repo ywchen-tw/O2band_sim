@@ -24,7 +24,7 @@ this evaluation rests on independent public references and local model reruns.
 | 3 | O2 absorber amount | canonical 0.2095 dry-air VMR | **−0.17%** (H2O dilution) | `eval_band_metrics.py` |
 | 4 | O2 line-by-line engine | HAPI, **matched** HITRAN 2020 | **~0.1–0.5%** | `eval_hapi_local.py` |
 | 5 | O2 A-band continuum | OCO ABSCO v5.2 | **8–9× low** → ~0.01 OT (CIA+line-mixing, omitted by design) | `eval_absco.py` |
-| 6 | RT solver + reflectance convention | libRadtran / DISORT | **<1% (all 6 geometries; rel RMS ~0.45%)** | `eval_lrt.py` |
+| 6 | RT solver + reflectance convention | libRadtran / DISORT | **<1% (9 wvl × 6 geometries = 54 runs; rel RMS 0.31%, corr 1.0)** | `eval_lrt.py` |
 | — | *(context)* O2A line intensities | HAPI online = HITRAN 2024 | **+1.3%** (edition change, not a defect) | `eval_hapi.py` |
 
 **Bottom line:** absorption (line engine) and scattering (Rayleigh) match
@@ -117,10 +117,14 @@ ABSCO here covers only the A-band; O2B is not in this table.
 
 ## 6. RT solver + reflectance convention vs libRadtran/DISORT
 
-At the band window (757.0 nm, O2 OT ≈ 0 → pure Rayleigh + Lambertian), our
-Monte-Carlo (MCARaTS) reflectance vs libRadtran's discrete-ordinate solver
-(DISORT, 16 streams), both using ρ = πI/(μ₀F₀), across all six prescribed
-geometries (full production grid):
+At **9 window wavelengths spanning 757.0–771.5 nm** (each O2 OT ≲ 0.001, i.e. pure
+Rayleigh + Lambertian) × all 6 prescribed geometries = **54 runs**, our Monte-Carlo
+(MCARaTS) reflectance vs libRadtran's discrete-ordinate solver (DISORT, 16 streams),
+both using ρ = πI/(μ₀F₀):
+
+**Overall: relative RMS 0.31%, correlation 1.00000, every point within ±0.82%.**
+
+Representative geometry table at 757.0 nm (pattern is the same at all 9 wavelengths):
 
 | SZA | albedo | MCARaTS | DISORT | diff |
 |---|---|---|---|---|
@@ -131,20 +135,22 @@ geometries (full production grid):
 | 60° | 0.0 | 0.01273 | 0.01276 | −0.17% |
 | 60° | 0.1 | 0.10919 | 0.10911 | +0.07% |
 
-Two fully independent solvers agree to **<1% at every geometry** (relative RMS
-≈ 0.45%).  This validates:
+Two fully independent solvers agree to **<1% at every wavelength and geometry**.
+This validates:
 
-- **RT transport** — MC vs discrete-ordinate agree on the Rayleigh continuum.  The
-  small systematic (MCARaTS ~0.1–0.8% below DISORT at albedo 0, <0.1% at 0.1)
-  lives only in the faint atmospheric-path reflectance (~0.01), where DISORT's
-  16-stream angular treatment / MC noise / Rayleigh depolarization differ most; it
-  vanishes once the Lambertian surface dominates.
+- **RT transport** — MC vs discrete-ordinate agree on the Rayleigh continuum across
+  the whole band (the λ⁻⁴ decline, ρ 0.0098→0.0091 over 757→771.5 nm at SZA 0/
+  albedo 0, is tracked by both).  The small systematic (MCARaTS ~0.1–0.8% below
+  DISORT at albedo 0, <0.3% and sign-changing at 0.1) lives only in the faint
+  atmospheric-path reflectance (~0.01), where DISORT's 16-stream angular treatment
+  / MC noise / Rayleigh depolarization differ most; it vanishes once the Lambertian
+  surface dominates.
 - **Reflectance convention, across SZA** — at albedo 0 the pure-Rayleigh ρ rises
   with SZA (0.00983 → 0.01003 → 0.01273) in *both* solvers, tracking to <1%.  A
   missing μ₀ = cos(SZA) would diverge at SZA 60° (μ₀ = 0.5 → ~2×); it is −0.17%.
   So `ρ = π·R_raw/μ₀` is confirmed across the grid (corroborating V7).
 - **Albedo** — ρ increases 0.01 → 0.107 (0 → 0.1 albedo, monotonic); at albedo 0.1
-  the two solvers agree to <0.1% (surface term handled identically).
+  the two solvers agree to <0.3% (surface term handled identically).
 
 ---
 
