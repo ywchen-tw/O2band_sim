@@ -30,7 +30,7 @@ def _group(f, band):
     return f[band] if (band in f and isinstance(f[band], h5py.Group)) else f
 
 
-def plot(h5path, out_png):
+def plot(h5path, out_png, noise=False):
     plt.rcParams.update({'font.size': 11, 'axes.titlesize': 12,
                          'axes.spines.top': False, 'axes.spines.right': False,
                          'axes.edgecolor': '0.5', 'axes.linewidth': 0.8})
@@ -41,19 +41,27 @@ def plot(h5path, out_png):
             g = _group(f, band)
             wvl = g['wvl'][:]; sza = g['sza'][:]; alb = g['albedo'][:]
             ref = g['reflectance'][:]
+            se = g['reflectance_stderr'][:] if noise else None
             for i, s in enumerate(sza):
                 for j, a in enumerate(alb):
-                    ax.plot(wvl, ref[i, j], color=SZA_COLOR.get(float(s), '0.3'),
+                    if noise:
+                        r = ref[i, j]; y = np.where(r > 1e-5, 100.0 * se[i, j] / r, np.nan)
+                    else:
+                        y = ref[i, j]
+                    ax.plot(wvl, y, color=SZA_COLOR.get(float(s), '0.3'),
                             ls=ALB_STYLE.get(float(a), '-'), lw=0.6, alpha=0.9)
             ax.set_title(title)
             ax.set_xlabel('Wavelength (nm, air)')
             ax.set_xlim(wvl[0], wvl[-1])
-            ax.set_ylim(0, None)
             ax.margins(x=0)
+            if noise:
+                ax.set_yscale('log'); ax.set_ylim(0.01, 100)
+            else:
+                ax.set_ylim(0, None)
             ax.grid(True, color='0.85', lw=0.4)
             ax.set_axisbelow(True)
 
-    axes[0].set_ylabel('TOA reflectance')
+    axes[0].set_ylabel('Relative MC noise, stderr/ρ (%)' if noise else 'TOA reflectance')
 
     # single figure-level legend along the BOTTOM, clear of the data
     handles = [Line2D([0], [0], color=SZA_COLOR[s], lw=2.2, label='SZA %.0f°' % s)
@@ -63,8 +71,9 @@ def plot(h5path, out_png):
     fig.legend(handles=handles, loc='lower center', bbox_to_anchor=(0.5, 0.0),
                ncol=5, frameon=False, fontsize=10, columnspacing=1.8, handlelength=2.2)
 
-    fig.suptitle('TOA reflectance — O$_2$ A/B-band Phase-1 clear-sky benchmark '
-                 '(AFGL mid-lat summer, 0.001 nm)', fontsize=12)
+    title = ('Monte-Carlo reflectance noise' if noise else 'TOA reflectance')
+    fig.suptitle('%s — O$_2$ A/B-band Phase-1 benchmark '
+                 '(P=10$^6$/g, Nrun=3)' % title, fontsize=12)
     fig.tight_layout(rect=[0, 0.06, 1, 0.95])       # reserve bottom (legend) + top (suptitle)
     fig.savefig(out_png, dpi=200)
     print('wrote %s' % out_png)
@@ -79,8 +88,11 @@ if __name__ == '__main__':
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('h5', nargs='?', default=default_h5)
     p.add_argument('-o', '--out', default=None)
+    p.add_argument('--noise', action='store_true',
+                   help='plot relative MC noise (stderr/rho, %%) instead of reflectance')
     args = p.parse_args()
     if not os.path.isfile(args.h5):
         sys.exit('Error: no such file: %s' % args.h5)
-    out = args.out or os.path.join(os.path.dirname(args.h5), 'reflectance_o2ab.png')
-    plot(args.h5, out)
+    default_name = 'mc_noise_o2ab.png' if args.noise else 'reflectance_o2ab.png'
+    out = args.out or os.path.join(os.path.dirname(args.h5), default_name)
+    plot(args.h5, out, noise=args.noise)
