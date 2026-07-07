@@ -55,13 +55,14 @@ this evaluation rests on independent public references and local model reruns.
 | 4 | O2 line-by-line engine | HAPI, **matched** HITRAN 2020 | **~0.1–0.5%** | `eval_hapi_local.py` |
 | 5 | O2 A-band continuum | OCO ABSCO v5.2 | **8–9× low** → ~0.01 OT (CIA+line-mixing, omitted by design) | `eval_absco.py` |
 | 6 | RT solver + reflectance convention | libRadtran / DISORT | **<0.4% rel RMS** — window (rRMS 0.31%) + in-band injected OD 0.05–3, both bands (rRMS 0.29/0.36%), corr 1.0 | `eval_lrt.py`, `eval_lrt_inband.py` |
+| 7 | Solar transmittance (Toon SPTS 2024, radiance-only input) | OCO L2 solar model, O2A overlap | **RMS 3×10⁻⁴**, bias −7×10⁻⁶, corr 0.99999 | `eval_spts_oco.py` |
 | — | *(context)* O2A line intensities | HAPI online = HITRAN 2024 | **+1.3%** (edition change, not a defect) | `eval_hapi.py` |
 
 **Bottom line:** absorption (line engine) and scattering (Rayleigh) match
 independent references to well under 1%; the RT transport and reflectance
 convention match an independent solver to <1% across all six prescribed
 geometries.  The only large differences are the two documented Phase-1 choices
-(§5, §7 below), both now quantified.
+(§5, §8 below), both now quantified.
 
 ---
 
@@ -215,7 +216,39 @@ range — window continuum through saturating line absorption — in both bands.
 
 ---
 
-## 7. Summary of the two Phase-1 differences (both by design)
+## 7. Solar transmittance (SPTS) vs OCO L2 solar model
+
+Added 2026-07-07: the absolute-radiance product folds F₀ = CU composite
+continuum × **Toon (JPL) SPTS** disk-integrated solar transmittance
+(`solar_merged_20240731`, 0.01 cm⁻¹ grid), so Fraunhofer lines are resolved on
+the 0.001 nm output grid.  Reflectance and optical thickness are F₀-independent
+and unaffected (the intercomparison delivery `o2band_benchmark_noradiance.h5`
+carries no solar-dependent dataset at all).
+
+Check: the OCO retrieval's solar model (`l2_solar_model.h5`, Band 1
+12700–13300 cm⁻¹ on a 0.001 cm⁻¹ grid) is an independent file built from an
+earlier release of the same Toon solar line list, and overlaps our O2 A-band
+window.  Comparing SPTS transmittance interpolated onto the OCO grid over
+12953–13210 cm⁻¹ (257,000 points):
+
+| statistic | value |
+|---|---|
+| mean transmittance | 0.98024 (both) |
+| bias | −6.7×10⁻⁶ |
+| RMS difference | 3.0×10⁻⁴ |
+| correlation | 0.99999 |
+| fraction \|Δ\| > 10⁻³ / 10⁻² | 0.4% / 0.02% |
+| deepest line (K I 766.5 nm) | T = 0.1139 vs 0.1143 |
+
+The largest single-point difference (1.2×10⁻²) sits on a sharp line core at
+770.1 nm, consistent with the SPTS grid being 10× coarser than OCO Band 1 —
+immaterial at the 0.001 nm (≈0.02 cm⁻¹) output sampling.  This checks both the
+SPTS file content and our air-nm → vacuum-wavenumber handling; no OCO band
+covers O2B, so the check is O2A only.
+
+---
+
+## 8. Summary of the two Phase-1 differences (both by design)
 
 1. **HITRAN edition** — the prescribed HITRAN 2020 O2 A-band intensities are ~1.3%
    below the current HITRAN 2024; a version choice, not an error.
@@ -225,7 +258,7 @@ range — window continuum through saturating line absorption — in both bands.
 
 Everything else matches independent references to <1%.
 
-## 8. Caveats / not covered
+## 9. Caveats / not covered
 
 - **Participant ensemble** (KNMI intercomparison models) unavailable → not compared.
 - **ABSCO band coverage**: ABSCO v5.2 has no O2B table, so check #5 (CIA/line-mixing
@@ -234,10 +267,11 @@ Everything else matches independent references to <1%.
   dependent with no single clean published value — reported in `eval_metrics.py`
   for reference, not differenced here.
 
-## 9. Reproducibility
+## 10. Reproducibility
 
 Each row of the scorecard is produced by the named script under `src/`:
 `eval_rayleigh.py`, `eval_band_metrics.py`, `eval_hapi_local.py` / `eval_hapi.py`
-(via `curc_hapi_eval.sh`), `eval_absco.py`, and for #6 `eval_lrt.py` (window) +
-`eval_lrt_inband.py` (in-band, `INBAND=1`) via `curc_lrt_eval.sh`.
+(via `curc_hapi_eval.sh`), `eval_absco.py`, for #6 `eval_lrt.py` (window) +
+`eval_lrt_inband.py` (in-band, `INBAND=1`) via `curc_lrt_eval.sh`, and for #7
+`eval_spts_oco.py`.
 `eval_metrics.py` provides the shared band-metric + `diff_stats` engine.
