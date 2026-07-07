@@ -16,9 +16,14 @@ Design (see PLAN.md sec.10)
 - Work unit = (band, SZA, albedo, chunk).  Each writes a chunk HDF5 at a
   deterministic, lattice-anchored path and is skip-if-done with atomic writes, so
   a failed run resumes by rerunning and sub-range runs compose with the full run.
-- Solar source: MCARaTS runs unit-source (Src_flx=1); the CU composite solar
-  spectrum F0(lambda) is folded in post to give absolute radiance, while
-  reflectance rho = pi*R_raw/mu0 is F0-independent (PLAN.md sec.7.5).
+- Solar source: MCARaTS runs unit-source (Src_flx=1); F0(lambda) is folded in
+  post to give absolute radiance, while reflectance rho = pi*R_raw/mu0 is
+  F0-independent (PLAN.md sec.7.5).  F0 is the CU composite continuum, times
+  the Toon SPTS solar transmittance (Fraunhofer lines) when a
+  ``solar_merged_*.out`` file is present in the data dir.  Chunk files store
+  r_raw and the F0 used at run time, and assemble() refolds radiance with the
+  *current* F0 -- so swapping the solar model only requires re-assembly, not
+  re-running the RT.
 
 Reproducibility: MCARaTS v0.10.4 is pinned explicitly via MCARATS_V010_EXE and
 recorded in metadata alongside every setting, input-file identity and git commit.
@@ -53,7 +58,7 @@ except ImportError:
         sys.path.insert(0, _ER3T_HOME)
 
 from util.atmosphere import afgl_atmosphere
-from util.solar import solar_cu
+from util.solar import solar_cu, solar_spts
 from util.tips import tips2021
 from util.absorption import hitran_lines, o2band_absorption, cal_rayleigh_od, BANDS
 from util.er3t_abs import mca_atm_lbl, mca_abs_lbl, set_per_g_rayleigh
@@ -141,6 +146,7 @@ class O2BandConfig:
                  data_dir=None,
                  out_dir=None,
                  qtpy_dir=None,
+                 spts='auto',                      # SPTS file | 'auto' | 'none'
                  mcarats_exe_env='MCARATS_V010_EXE'):
 
         self.bands = tuple(bands)
@@ -166,9 +172,24 @@ class O2BandConfig:
         self.fname_hitran = os.path.join(self.data_dir, 'hitran2020_lines.txt')
         self.fname_afgl = os.path.join(self.data_dir, 'afglms.dat')
         self.fname_solar = os.path.join(self.data_dir, 'CU_composite_solar.dat')
+        self.fname_spts = self._resolve_spts(spts)
 
         self.mcarats_exe_env = mcarats_exe_env
         self.mcarats_exe = os.environ.get(mcarats_exe_env, None)
+
+    def _resolve_spts(self, spts):
+        """Locate the Toon SPTS solar-transmittance file: an explicit path,
+        'auto' (newest ``solar_merged_*.out`` in data_dir, if any), or
+        'none'/None to use the smooth CU continuum alone."""
+        if spts in (None, 'none', 'off'):
+            return None
+        if spts == 'auto':
+            hits = sorted(glob.glob(os.path.join(self.data_dir,
+                                                 'solar_merged_*.out')))
+            return hits[-1] if hits else None
+        if not os.path.isfile(spts):
+            raise OSError('Error [O2BandConfig]: SPTS file not found: %r' % spts)
+        return spts
 
     # ---- absorption cache identity: everything that changes the OD spectrum ---
     def absorption_key(self, band):
@@ -194,7 +215,10 @@ class O2BandConfig:
             partition_sums='TIPS-2021', wavelength_convention='air',
             o2_cia='excluded', rayleigh='Bodhaine 1999',
             reflectance_def='rho = pi*I/(mu0*F0) = pi*R_raw/mu0',
-            solar_source='CU_composite_solar.dat (F0 folded post-RT)',
+            solar_source=('CU_composite_solar.dat x SPTS %s (F0 folded post-RT)'
+                          % os.path.basename(self.fname_spts)
+                          if self.fname_spts else
+                          'CU_composite_solar.dat (F0 folded post-RT)'),
             mcarats_exe=self.mcarats_exe, mcarats_version='v0.10.4',
             er3t_home=os.environ.get('ER3T_HOME', ''),
             data_dir=os.path.abspath(self.data_dir),
@@ -204,7 +228,9 @@ class O2BandConfig:
             git_commit=_git_commit(_HERE),
             inputs=dict(hitran=_file_id(self.fname_hitran),
                         afgl=_file_id(self.fname_afgl),
-                        solar=_file_id(self.fname_solar)),
+                        solar=_file_id(self.fname_solar),
+                        solar_spts=(_file_id(self.fname_spts)
+                                    if self.fname_spts else None)),
         )
 
 
@@ -223,7 +249,8 @@ class O2BandSim:
         os.makedirs(self._cache_dir, exist_ok=True)
 
         self.atm = afgl_atmosphere(cfg.fname_afgl, z_top=cfg.z_top)
-        self.solar = solar_cu(cfg.fname_solar)
+        self.solar = (solar_spts(cfg.fname_solar, cfg.fname_spts)
+                      if cfg.fname_spts else solar_cu(cfg.fname_solar))
         self.tips = tips2021(cfg.qtpy_dir)
         self.mca_atm = mca_atm_lbl(self.atm)
 
@@ -412,6 +439,10 @@ class O2BandSim:
         rad_err = np.full((nsza, nalb, nw), np.nan)
         pos = {int(k): i for i, k in enumerate(idx_all)}     # band-idx -> array col
 
+        # F0 from the *current* solar model; chunk radiances are refolded onto
+        # it below, so a solar-model change never requires re-running the RT
+        f0 = self.solar.interp(wvl)
+
         for isza, sza in enumerate(self.cfg.szas):
             for ialb, alb in enumerate(self.cfg.albedos):
                 for idx_chunk in self._chunks(absb):
@@ -430,14 +461,16 @@ class O2BandSim:
                                 fac = float(np.sqrt(nrun / (nrun - 1.0)))
                         ref[isza, ialb, cols] = f['ref'][:]
                         ref_err[isza, ialb, cols] = f['ref_stderr'][:] * fac
-                        rad[isza, ialb, cols] = f['rad'][:]
-                        rad_err[isza, ialb, cols] = f['rad_stderr'][:] * fac
+                        # refold: chunk rad = r_raw * F0_run; rescale to the
+                        # current F0 (radiance and its stderr scale linearly)
+                        refold = f0[cols] / f['f0'][:]
+                        rad[isza, ialb, cols] = f['rad'][:] * refold
+                        rad_err[isza, ialb, cols] = f['rad_stderr'][:] * fac * refold
 
         # geometry-independent optical thickness on the same grid
         od_o2 = absb.od['o2'][:, idx_all]
         od_h2o = absb.od['h2o'][:, idx_all] if 'h2o' in absb.od else np.zeros_like(od_o2)
         od_ray = cal_rayleigh_od(absb.atm, wvl)               # (Nlay, Nw)
-        f0 = self.solar.interp(wvl)
 
         # write both the standalone per-band file and the merged-file group
         for target in (band_path, merged_grp):
@@ -560,6 +593,10 @@ def _build_cli():
                    help="cores for MCARaTS ('auto' or an int; default auto)")
     p.add_argument('--out-dir', default=None,
                    help='output base (default: $O2BAND_OUT_DIR or scratch on Linux)')
+    p.add_argument('--spts', default=None, metavar='FILE|auto|none',
+                   help="Toon SPTS solar-transmittance file for F0 "
+                        "(default 'auto': newest solar_merged_*.out in the data "
+                        "dir, plain CU continuum if none; 'none' disables)")
     p.add_argument('--test', action='store_true',
                    help='quick prototype: narrow window, few photons (sanity run)')
     p.add_argument('--overwrite', action='store_true',
@@ -597,6 +634,7 @@ if __name__ == '__main__':
     if args.chunk_size is not None:  kw['chunk_size'] = args.chunk_size
     if args.z_top is not None:       kw['z_top'] = args.z_top
     if args.out_dir is not None:     kw['out_dir'] = args.out_dir
+    if args.spts is not None:        kw['spts'] = args.spts
     if args.ncpu is not None:
         kw['Ncpu'] = args.ncpu if args.ncpu == 'auto' else int(args.ncpu)
 
