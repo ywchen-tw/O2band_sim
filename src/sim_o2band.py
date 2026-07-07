@@ -304,6 +304,7 @@ class O2BandSim:
             f.attrs['Ng'] = int(idx_chunk.size)
             f.attrs['photons'] = self.cfg.photons
             f.attrs['Nrun'] = self.cfg.Nrun
+            f.attrs['stderr_ddof'] = 1     # std/stderr use sample std (ddof=1)
             f.attrs['mu0'] = out.mu0
             f.create_dataset('idx', data=idx_chunk.astype(np.int32))
             f.create_dataset('wvl', data=out.wvl)
@@ -420,10 +421,17 @@ class O2BandSim:
                     with h5py.File(fchunk, 'r') as f:
                         cidx = f['idx'][:]
                         cols = [pos[int(k)] for k in cidx]
+                        # chunks written before the ddof fix carry population-std
+                        # (ddof=0) stderr; rescale to sample-std on the fly
+                        fac = 1.0
+                        if int(f.attrs.get('stderr_ddof', 0)) != 1:
+                            nrun = int(f.attrs.get('Nrun', self.cfg.Nrun))
+                            if nrun > 1:
+                                fac = float(np.sqrt(nrun / (nrun - 1.0)))
                         ref[isza, ialb, cols] = f['ref'][:]
-                        ref_err[isza, ialb, cols] = f['ref_stderr'][:]
+                        ref_err[isza, ialb, cols] = f['ref_stderr'][:] * fac
                         rad[isza, ialb, cols] = f['rad'][:]
-                        rad_err[isza, ialb, cols] = f['rad_stderr'][:]
+                        rad_err[isza, ialb, cols] = f['rad_stderr'][:] * fac
 
         # geometry-independent optical thickness on the same grid
         od_o2 = absb.od['o2'][:, idx_all]
@@ -456,6 +464,7 @@ def _write_band_payload(target, meta, band, cfg, wvl, f0,
 
     f.attrs['band'] = band
     f.attrs['band_range_nm'] = list(BANDS[band])
+    f.attrs['stderr_ddof'] = 1             # stderr datasets use sample std (ddof=1)
     f.create_dataset('wvl', data=wvl)                        # air nm
     f.create_dataset('sza', data=np.array(cfg.szas))
     f.create_dataset('albedo', data=np.array(cfg.albedos))

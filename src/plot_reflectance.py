@@ -30,6 +30,18 @@ def _group(f, band):
     return f[band] if (band in f and isinstance(f[band], h5py.Group)) else f
 
 
+def _run_label(f):
+    """'P=10$^7$/g, Nrun=3' from the file's metadata (merged and per-band)."""
+    src = f['metadata'].attrs if 'metadata' in f else f.attrs
+    p, n = float(src.get('photons', np.nan)), int(src.get('Nrun', 0))
+    if not np.isfinite(p) or p <= 0 or n <= 0:
+        return ''
+    exp = int(np.floor(np.log10(p)))
+    mant = p / 10.0 ** exp
+    ptxt = '10$^{%d}$' % exp if np.isclose(mant, 1.0) else '%.3g×10$^{%d}$' % (mant, exp)
+    return ' (P=%s/g, Nrun=%d)' % (ptxt, n)
+
+
 def plot(h5path, out_png, noise=False):
     plt.rcParams.update({'font.size': 11, 'axes.titlesize': 12,
                          'axes.spines.top': False, 'axes.spines.right': False,
@@ -37,6 +49,7 @@ def plot(h5path, out_png, noise=False):
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.0))
 
     with h5py.File(h5path, 'r') as f:
+        run_label = _run_label(f)
         for ax, (band, title) in zip(axes, BANDS):
             g = _group(f, band)
             wvl = g['wvl'][:]; sza = g['sza'][:]; alb = g['albedo'][:]
@@ -72,8 +85,8 @@ def plot(h5path, out_png, noise=False):
                ncol=5, frameon=False, fontsize=10, columnspacing=1.8, handlelength=2.2)
 
     title = ('Monte-Carlo reflectance noise' if noise else 'TOA reflectance')
-    fig.suptitle('%s — O$_2$ A/B-band Phase-1 benchmark '
-                 '(P=10$^6$/g, Nrun=3)' % title, fontsize=12)
+    fig.suptitle('%s — O$_2$ A/B-band Phase-1 benchmark%s' % (title, run_label),
+                 fontsize=12)
     fig.tight_layout(rect=[0, 0.06, 1, 0.95])       # reserve bottom (legend) + top (suptitle)
     fig.savefig(out_png, dpi=200)
     print('wrote %s' % out_png)
@@ -83,7 +96,7 @@ if __name__ == '__main__':
     _HERE = os.path.dirname(os.path.abspath(__file__))
     default_h5 = os.path.join(
         os.environ.get('O2BAND_OUT_DIR', os.path.join(_HERE, '..', 'out')),
-        'z120_p1e6_n3', 'o2band_benchmark.h5')
+        'z120_p1e7_n3', 'o2band_benchmark.h5')
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('h5', nargs='?', default=default_h5)

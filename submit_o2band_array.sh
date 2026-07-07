@@ -46,18 +46,18 @@ echo "Pipeline: bands=[${BANDS}]  NTASKS=${NTASKS} CORES=${CORES} CAP=${CAP}" \
 
 # 1) prep -- build the absorption cache once (small, fast; no RT)
 jid_prep=$(sbatch --parsable --job-name=o2b_prep \
-    --ntasks=2 --time=00:20:00 --export=ALL "$STAGE" prep)
+    --ntasks=2 --time=00:20:00 --partition=blanca --export=ALL "$STAGE" prep)
 echo "  prep     job ${jid_prep}"
 
 # 2) run -- job array of shards, starts only if prep succeeded
 jid_run=$(sbatch --parsable --dependency=afterok:${jid_prep} --job-name=o2b_run \
     --ntasks=${CORES} --array=0-${LAST}%${CAP} --time=${TIME_RUN} \
-    --export=ALL "$STAGE" run)
+    --partition=blanca --export=ALL "$STAGE" run)
 echo "  run      job ${jid_run}  (array 0-${LAST}%${CAP}, ${CORES} cores/task)"
 
 # 3) assemble -- stitch + noise report, starts only if ALL array tasks succeeded
 jid_asm=$(sbatch --parsable --dependency=afterok:${jid_run} --job-name=o2b_asm \
-    --ntasks=2 --time=00:30:00 --export=ALL "$STAGE" assemble)
+    --ntasks=2 --time=00:30:00 --partition=blanca --export=ALL "$STAGE" assemble)
 echo "  assemble job ${jid_asm}"
 
 echo "Submitted. Monitor:  squeue -u \$USER   |   outputs -> ${O2BAND_OUT_DIR:-/scratch/alpine/yuch8913/O2band_sim}/z${Z_TOP%.*}_p${PHOTONS}_n${NRUN}/"

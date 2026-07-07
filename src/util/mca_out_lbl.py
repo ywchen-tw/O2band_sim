@@ -98,9 +98,12 @@ class mca_out_lbl:
             for ig in range(Ng):
                 r[ir, ig] = self._read_one(mca_obj.fnames_out[ir][ig])
 
-        # statistics across the Nrun independent runs
+        # statistics across the Nrun independent runs; sample std (ddof=1) --
+        # the population std (ddof=0) would underestimate the run spread by
+        # sqrt((N-1)/N) (~18% at Nrun=3)
         self.r_raw = np.mean(r, axis=0)                 # (Ng,)
-        self.r_raw_std = np.std(r, axis=0)              # population std across runs
+        self.r_raw_std = (np.std(r, axis=0, ddof=1) if Nrun > 1
+                          else np.zeros(Ng, dtype=np.float64))
         self._r = r                                     # keep raw (Nrun, Ng) for diagnostics
 
         # absolute radiance  I = R_raw * F0 * sol_fac

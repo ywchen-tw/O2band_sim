@@ -7,11 +7,25 @@ hidden.  Per the agreed scope this reports **difference statistics, not pass/fai
 verdicts** (EVAL_PLAN §5).
 
 Run/context: AFGL mid-latitude-summer, z_top 120 km, prescribed HITRAN 2020,
-Voigt, air wavelengths.  Reflectance figures use the z120/P=1e6/Nrun=3 production
-output (full grid: SZA 0/30/60° × albedo 0/0.1).  Generated 2026-07-06.
+Voigt, air wavelengths.  Reflectance figures use the z120/P=1e7/Nrun=3 production
+output (full grid: SZA 0/30/60° × albedo 0/0.1; MC-noise p95 ≤0.18% O2A /
+≤0.05% O2B).  The solver cross-checks in §6 were run against the P=1e6
+predecessor; its mean reflectances differ from the 1e7 production only by MC
+noise (verified 1/√N scaling between the two runs), so those difference
+statistics carry over.  Generated 2026-07-06; production photons raised to
+1e7 on 2026-07-07.
 
 The participant-model ensemble (KNMI intercomparison) was **not available**, so
 this evaluation rests on independent public references and local model reruns.
+
+> Erratum (2026-07-06): the delivered `reflectance_stderr`/`radiance_stderr` were
+> originally computed with the population std (ddof=0) over the Nrun=3 runs and
+> have been rescaled in place to the unbiased sample std (ddof=1), a uniform
+> ×√(3/2) ≈ 1.22 on the error bars only (marker attr `stderr_ddof=1`).  All mean
+> reflectance/radiance/OT values are bit-identical, so the difference statistics
+> below are unchanged; only "MC noise" percentages quoted in §6b read ~22% larger
+> under the corrected convention (conclusions unaffected).  The P=1e7 production
+> files compute ddof=1 stderr natively (no rescale involved).
 
 ---
 
