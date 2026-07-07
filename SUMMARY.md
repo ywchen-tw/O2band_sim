@@ -50,8 +50,10 @@ computed from HITRAN 2020 and Rayleigh scattering from Bodhaine (1999).
   cutoff ±3·ν₀/R (R=20000); column integration exact for exponential-in-z density.
 - **Air wavelengths:** HITRAN vacuum wavenumbers converted via Edlén (1966).
 - **Reflectance:** MCARaTS is run unit-source (`Src_flx=1`); ρ(λ) = π·I/(μ₀·F₀) =
-  **π·R_raw/μ₀** (μ₀ = cos SZA), which is F₀-independent.  The CU composite solar
-  spectrum F₀ is folded in only for the absolute-radiance product.
+  **π·R_raw/μ₀** (μ₀ = cos SZA), which is F₀-independent.  F₀ — the CU composite
+  continuum times the **Toon (JPL) SPTS** disk-integrated solar transmittance
+  (Fraunhofer lines resolved on a 0.01 cm⁻¹ grid) — is folded in only for the
+  absolute-radiance product.
 - **Optical thickness** for O2, H2O, and Rayleigh is output separately (layer and
   column) so that any RT-model difference can be attributed to absorption,
   scattering, transport, or radiometric convention.
@@ -65,6 +67,7 @@ Delivered as **HDF5**, self-describing (all settings in `metadata/`):
 | file | contents |
 |---|---|
 | `o2band_benchmark.h5` | **merged** — both bands as groups `o2a`, `o2b` + `metadata` (42 MB) |
+| `o2band_benchmark_noradiance.h5` | **intercomparison delivery** — merged file minus the solar-dependent datasets (`radiance`, `radiance_stderr`, `f0`); everything it contains is F₀-independent (`src/make_delivery_h5.py`) |
 | `o2a.h5`, `o2b.h5` | per-band (datasets at root) |
 | `reflectance_o2ab.png`, `mc_noise_o2ab.png` | quick-look figures: TOA reflectance and relative MC noise, all geometries (`src/plot_reflectance.py`) |
 
@@ -75,7 +78,7 @@ metadata/                     # every setting, input identities, git commit
 <band>/
   wvl                (15001,)              # air wavelength (nm)
   sza                (3,)   albedo (2,)    # 0/30/60 deg ; 0.0/0.1
-  f0                 (15001,)              # CU solar irradiance (W m-2 nm-1)
+  f0                 (15001,)              # F0 = CU continuum x SPTS transmittance (W m-2 nm-1)
   reflectance        (3, 2, 15001)         # TOA reflectance rho (SZA, albedo, wvl)
   reflectance_stderr (3, 2, 15001)         # Monte-Carlo standard error
   radiance           (3, 2, 15001)         # W m-2 nm-1 sr-1 (= rho*mu0*F0/pi)
@@ -125,6 +128,7 @@ Each physics component was cross-checked against an independent public reference
 | O2 line-by-line engine | HAPI (independent Voigt LBL, matched HITRAN 2020) | ~0.1–0.5% |
 | O2 A-band absorption | OCO ABSCO v5.2 | line cores ~1%; continuum by design (see §4) |
 | RT solver + convention | libRadtran/DISORT (window + injected in-band OD, both bands) | <0.4% rel RMS, corr 1.0 |
+| Solar transmittance (Toon SPTS 2024) | OCO L2 solar model, A-band overlap | bias −7×10⁻⁶, RMS 3×10⁻⁴, deepest-line depths <4×10⁻⁴ |
 
 The absorption engine, scattering, and RT transport/convention all match
 independent references to well under 1%.
@@ -142,10 +146,12 @@ These are deliberate, documented simplifications — not errors:
 2. **HITRAN 2020** (as prescribed).  Current HITRAN 2024 raised O2 **A-band** line
    intensities by ~1.3% (B-band unchanged); migrating editions would shift A-band
    absorption accordingly.
-3. **Absolute radiance uses the smooth CU solar spectrum** (no Fraunhofer structure
-   at 0.001 nm).  Reflectance is F₀-independent and therefore unaffected; only the
-   absolute-radiance product would need a high-resolution solar spectrum for
-   realistic Fraunhofer lines.
+3. **Absolute radiance folds F₀ = CU continuum × Toon SPTS solar transmittance**
+   (disk-integrated, 2024-07-31 release), so Fraunhofer lines are resolved on the
+   0.001 nm grid; validated against the OCO L2 solar model in the A-band overlap
+   (§3).  The *absolute scale* still comes from the smooth CU composite continuum.
+   Reflectance is F₀-independent throughout, and the delivery file
+   `o2band_benchmark_noradiance.h5` omits the solar-dependent products entirely.
 
 Out of scope for Phase 1: clouds, aerosols, polarization, instrument convolution,
 and real-data comparison.
@@ -156,8 +162,9 @@ and real-data comparison.
 
 Every run is reproducible from committed configuration and the `metadata/` group:
 bands, resolution, SZA/albedo, line shape, HITRAN/TIPS versions, wavelength
-convention, Rayleigh model, reflectance definition, photons/Nrun, z_top,
-input-file identities, MCARaTS executable/version, and git commit.  Code:
+convention, Rayleigh model, reflectance definition, solar source (continuum +
+SPTS file), photons/Nrun, z_top, input-file identities, MCARaTS
+executable/version, and git commit.  Code:
 `src/sim_o2band.py` (driver) + `src/util/` (absorption, atmosphere, TIPS, optics,
 solar, er3t/MCARaTS adapters); evaluation: `src/eval_*.py`.
 
