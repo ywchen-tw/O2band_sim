@@ -10,9 +10,10 @@ Herbin, Preusker, Wang, Vidot, Duan, Stammes).
 
 ## 1. Experiment
 
-A Monte-Carlo radiative-transfer simulation (MCARaTS via er3t) of a horizontally
-homogeneous, clear-sky, plane-parallel atmosphere, with line-by-line molecular
-absorption computed from HITRAN 2020 and Rayleigh scattering from Bodhaine (1999).
+A Monte-Carlo radiative-transfer simulation (MCARaTS; Iwabuchi, 2006) through
+the er3t / EaR3T interface (Chen et al., 2023) of a horizontally homogeneous,
+clear-sky, plane-parallel atmosphere, with line-by-line molecular absorption
+computed from HITRAN 2020 and Rayleigh scattering from Bodhaine (1999).
 
 ### Prescribed settings (frozen)
 
@@ -94,4 +95,18 @@ with h5py.File('o2band_benchmark.h5') as f:
   scaled by the textbook 1/√N (3.2×) from the 10⁶-photon predecessor run,
   confirming pure photon statistics with no systematic noise floor.
 
+---
 
+## References
+
+- Iwabuchi, H.: Efficient Monte Carlo methods for radiative transfer modeling,
+  J. Atmos. Sci., 63, 2324-2339, doi:10.1175/JAS3755.1, 2006.
+- Iwabuchi, H., and Okamura, R.: Multispectral Monte Carlo radiative transfer
+  simulation by using the maximum cross-section method, J. Quant. Spectrosc.
+  Radiat. Transfer, 193, 40-46, doi:10.1016/j.jqsrt.2017.01.025, 2017.
+- Chen, H., Schmidt, K. S., Massie, S. T., Nataraja, V., Norgren, M. S.,
+  Gristey, J. J., Feingold, G., Holz, R. E., and Iwabuchi, H.: The Education
+  and Research 3D Radiative Transfer Toolbox (EaR3T) - Towards the Mitigation
+  of 3D Bias in Airborne and Spaceborne Passive Imagery Cloud Retrievals,
+  Atmos. Meas. Tech., 16, 1971-2000,
+  https://doi.org/10.5194/amt-16-1971-2023, 2023.
