@@ -29,7 +29,8 @@ sys.path.insert(0, _HERE)
 
 from util.atmosphere import afgl_atmosphere
 from util.tips import tips2021
-from util.absorption import hitran_lines, o2band_absorption, BANDS
+from util.absorption import (hitran_lines, o2band_absorption, required_margin_cm,
+                             BANDS)
 from util.optics import air_to_vac_nm
 from eval_metrics import diff_stats, print_diff_stats
 
@@ -79,7 +80,8 @@ def run(z_top, layers=None):
     atm = afgl_atmosphere(os.path.join(data_dir, 'afglms.dat'), z_top=z_top)
     tips = tips2021()
     lines = hitran_lines(os.path.join(data_dir, 'hitran2020_lines.txt'),
-                         wl_range=BANDS['o2a'], margin_cm=5.0)
+                         wl_range=BANDS['o2a'],
+                         margin_cm=required_margin_cm(BANDS['o2a']))
     absb = o2band_absorption(atm, lines, band='o2a', include_h2o=False, tips=tips)
 
     nu = absb.nu_vac

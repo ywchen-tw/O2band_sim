@@ -26,7 +26,8 @@ sys.path.insert(0, _HERE)
 
 from util.atmosphere import afgl_atmosphere
 from util.tips import tips2021
-from util.absorption import hitran_lines, o2band_absorption, BANDS, MOL_O2
+from util.absorption import (hitran_lines, o2band_absorption, required_margin_cm,
+                             BANDS, MOL_O2)
 from util.optics import air_to_vac_nm
 from eval_metrics import diff_stats, print_diff_stats
 from eval_hapi import our_sigma_layer, hapi_sigma_layer
@@ -108,7 +109,8 @@ def run(bands, z_top, cache_dir, layers=None):
     for band in bands:
         table, nrow = register_local_table(fhit, band, cache_dir)
         hapi.db_begin(cache_dir)                             # (re)load tables
-        lines = hitran_lines(fhit, wl_range=BANDS[band], margin_cm=5.0)
+        lines = hitran_lines(fhit, wl_range=BANDS[band],
+                             margin_cm=required_margin_cm(BANDS[band]))
         absb = o2band_absorption(atm, lines, band=band, include_h2o=False, tips=tips)
 
         print('\n=========== %s : O2 sigma, ours vs HAPI on IDENTICAL 2020 lines '

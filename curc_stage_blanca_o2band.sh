@@ -35,12 +35,25 @@ STAGE="${1:?usage: curc_stage_blanca_o2band.sh prep|run|assemble}"
 BANDS="${BANDS:-o2a o2b}"
 NTASKS="${NTASKS:-48}"
 ZT="${Z_TOP:-120}"; PH="${PHOTONS:-1e6}"; NR="${NRUN:-3}"
+GRID="${GRID:-vac}"; CUTOFF="${CUTOFF_CM:-50}"; CIA="${CIA:-none}"
+# 1001 divides 15001 into 15 chunks (last 987); 1000 leaves a 1-point chunk
+# whose 6 geometry work units each spin up MCARaTS for a single g-point.
+CHUNK="${CHUNK:-1001}"
 BASE_OUT="${O2BAND_OUT_DIR:-/scratch/alpine/yuch8913/O2band_sim}"
-# Same config-stamped subdir as the single-node runner, so chunk files compose.
-OUT="${BASE_OUT}/z$(printf '%.0f' "$ZT")_p${PH}_n${NR}"
+# Config-stamped subdir, so chunk files compose across nodes AND runs with
+# different physics can never land in the same directory.  Chunk files are keyed
+# by (band, sza, albedo, index) only and `run` is skip-if-done, so mixing a new
+# wing cutoff / grid convention / CIA setting into an existing directory would
+# silently return the old numbers.  (sim_o2band.py also enforces this via
+# _physics_config.json; the name is belt-and-braces so it is visible in `ls`.)
+STAMP="${GRID}_c$(printf '%.0f' "$CUTOFF")"
+[ "$CIA" = "none" ] || STAMP="${STAMP}_cia"
+OUT="${BASE_OUT}/z$(printf '%.0f' "$ZT")_p${PH}_n${NR}_${STAMP}"
 OVERWRITE_FLAG=""; [ "${OVERWRITE:-0}" = "1" ] && OVERWRITE_FLAG="--overwrite"
 
 COMMON="--bands ${BANDS} --z-top ${ZT} --photons ${PH} --nrun ${NR} --out-dir ${OUT}"
+COMMON="${COMMON} --grid ${GRID} --cutoff-cm ${CUTOFF} --cia ${CIA}"
+COMMON="${COMMON} --chunk-size ${CHUNK}"
 
 case "$STAGE" in
   prep)

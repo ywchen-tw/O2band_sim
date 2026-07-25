@@ -18,7 +18,7 @@ pressure, cloud/aerosol height, and CO₂ light-path correction.
 ## What it computes
 
 For each **band × solar-zenith-angle × surface-albedo** combination, on a uniform
-**0.001 nm air-wavelength grid**:
+**0.001 nm vacuum-wavelength grid** (air wavelengths carried alongside):
 
 - **TOA reflectance** ρ(λ) and **absolute radiance** I(λ), each with a Monte-Carlo
   standard error.
@@ -31,7 +31,7 @@ For each **band × solar-zenith-angle × surface-albedo** combination, on a unif
 | | |
 |---|---|
 | Bands | B-band **680–695 nm**, A-band **757–772 nm** |
-| Spectral resolution | **0.001 nm** (air wavelengths) |
+| Spectral resolution | **0.001 nm** (vacuum wavelengths; `wvl_air` also written) |
 | Line data | **HITRAN 2020** |
 | Line shape | **Voigt** (Doppler ⊛ Lorentz, via Faddeeva `wofz`) |
 | Partition sums | **TIPS-2021** (consistent with HITRAN 2020) |
@@ -51,12 +51,28 @@ For each **band × solar-zenith-angle × surface-albedo** combination, on a unif
   Reference T = 296 K, P = 1013.25 hPa, c₂ = 1.4387769 cm·K.
 - **Lorentz HWHM** γ_L = (296/T)^n_air·[γ_air(P−P_self)+γ_self·P_self].
   **Doppler HWHM** α_D = ν₀·√(2 ln2 k_B T / m)/c, per-isotopologue mass.
-- **Wavelengths are air**; HITRAN wavenumbers are vacuum. Conversion via the
-  Edlén (1966) dispersion formula (λ_air = λ_vac / n(λ)).
-- **Line-wing cutoff** ±N·(ν₀/R) per line, default N = 3, R = 20000.
+- **Wavelengths are vacuum** (revised 2026-07-25 to match the other
+  intercomparison participants; the first delivery used air and arrived 0.21 nm
+  displaced). Air wavelengths are written too, via the Edlén (1966) dispersion
+  formula (λ_air = λ_vac / n(λ)). Every output wavelength dataset carries a
+  `convention` attribute; `grid='air'` reproduces the original delivery.
+- **Line-wing cutoff** ±50 cm⁻¹ per line, **plain truncation** (revised
+  2026-07-25 from ±N·(ν₀/R) with N = 3, R = 20000 ≈ 2 cm⁻¹, which discarded
+  ~0.055 of A-band micro-window column OD — a Voigt far wing is Lorentzian, so
+  Gaussian-tail reasoning does not apply). 50 cm⁻¹ sits 1.2–1.7% below an
+  untruncated sum where 25 cm⁻¹ sits 7.4% below; the protocol prescribes a
+  Voigt and no cutoff, so the cutoff is an artifact to minimise, and a full
+  band costs 9.9 s. Note LBLRTM-style *pedestal subtraction* at 25 cm⁻¹ shifts
+  the result further than the 25→50 change and in the opposite direction — see
+  PLAN.md §7.3. The line-selection margin is derived from the cutoff.
+- **Rayleigh** cross-section is evaluated at **vacuum** wavelength (Bodhaine's
+  fit is parameterised that way).
 - **H₂O** absorption is optional (`include_h2o`); water vapor is always part of the
   foreign (air) pressure that broadens O₂ (no separate γ_H₂O).
-- **O₂ CIA / continuum** excluded in Phase 1 (flagged in metadata).
+- **O₂ CIA / continuum** excluded in Phase 1 (flagged in metadata). A HITRAN
+  `.cia` file can be switched on with `--cia auto`; it is selected by spectral
+  coverage, and its optical depth is kept separable in `o2_cia_column`. See
+  PLAN.md §7.4 for why CIA and wider wings are not additive corrections.
 - **Solar source**: the CU composite solar spectrum is the incident irradiance
   F₀(λ). MCARaTS runs a unit source (`Src_flx = 1`); F₀ is folded in afterward
   (MC transport is linear in incident flux). Reflectance
@@ -91,11 +107,13 @@ o2band_sim/
 │       ├── absorption.py       # HITRAN parse + Voigt LBL -> per-layer O2/H2O OT; Rayleigh OT
 │       ├── tips.py             # TIPS-2021 Q(296)/Q(T)
 │       ├── optics.py           # air <-> vacuum wavelength (Edlén 1966)
+│       ├── cia.py               # HITRAN .cia reader + O2-O2 CIA OT (off by default)
 │       ├── solar.py            # CU solar spectrum reader/interpolator
 │       ├── er3t_abs.py         # er3t atm/abs adapters + exact per-0.001nm Rayleigh
 │       └── mca_out_lbl.py      # per-g-point radiance reader -> reflectance/radiance spectrum
 ├── tests/
-│   └── test_absorption.py      # physics validation suite (V1–V8)
+│   ├── test_absorption.py      # physics validation suite (V1–V8)
+│   └── test_wings.py           # wing-cutoff / grid-convention guards (W1–W7)
 └── out/                        # simulation output (not committed)
 ```
 
@@ -142,12 +160,21 @@ loads, conda env, and batch/array run scripts), see
 ### Run the validation suite
 
 ```bash
-python tests/test_absorption.py
+python tests/test_absorption.py    # V1-V8: parsing, profile, TIPS, Voigt, Rayleigh
+python tests/test_wings.py         # W1-W7: wing cutoff, margin coupling, grid convention
 ```
 
-Checks HITRAN parsing, the AFGL profile, TIPS-2021, air↔vacuum conversion, Voigt
-width & area normalization, Rayleigh OT vs. er3t, O₂ band OT, the sub-range guard,
-and reproducibility.
+`test_absorption.py` checks HITRAN parsing, the AFGL profile, TIPS-2021,
+air↔vacuum conversion, Voigt width & area normalization, Rayleigh OT vs. er3t,
+O₂ band OT, the sub-range guard, and reproducibility.  `test_wings.py` bounds
+the wing-truncation error against a brute-force no-cutoff Voigt sum — the HAPI
+cross-check cannot, since it truncates its own reference the same way.
+
+A local pre-flight comparing cutoffs and CIA without any RT:
+
+```bash
+python src/eval_cutoff_cia.py --band o2a --cutoffs 25 33 50
+```
 
 ### Run a simulation
 
@@ -217,7 +244,10 @@ the chunk files into the final HDF5s.
 ```
 metadata/                     # every setting used, input identities, git commit
 <band>/
-  wvl                (Nwvl,)              # air wavelength (nm)
+  wvl                (Nwvl,)              # primary grid (vacuum nm; attrs: units, convention)
+  wvl_vac            (Nwvl,)              # vacuum wavelength (nm)
+  wvl_air            (Nwvl,)              # air wavelength (nm, Edlén 1966)
+  nu_vac             (Nwvl,)              # vacuum wavenumber (cm-1)
   sza                (Nsza,)              # deg
   albedo             (Nalb,)
   f0                 (Nwvl,)              # incident solar irradiance (W m-2 nm-1)
@@ -229,9 +259,11 @@ metadata/                     # every setting used, input identities, git commit
     o2_layer         (Nlay, Nwvl)         # O2 absorption OT per layer
     h2o_layer        (Nlay, Nwvl)
     rayleigh_layer   (Nlay, Nwvl)
+    o2_cia_layer     (Nlay, Nwvl)         # O2-O2 CIA OT (all zero when excluded)
     o2_column        (Nwvl,)              # column-integrated
     h2o_column       (Nwvl,)
     rayleigh_column  (Nwvl,)
+    o2_cia_column    (Nwvl,)
   atmosphere/        # z/p/T on layers and levels
 ```
 

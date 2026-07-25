@@ -60,7 +60,10 @@ except ImportError:
 from util.atmosphere import afgl_atmosphere
 from util.solar import solar_cu, solar_spts
 from util.tips import tips2021
-from util.absorption import hitran_lines, o2band_absorption, cal_rayleigh_od, BANDS
+from util.absorption import (hitran_lines, o2band_absorption, cal_rayleigh_od,
+                             required_margin_cm, band_nu_range, BANDS,
+                             DEFAULT_CUTOFF_CM)
+from util.cia import hitran_cia, pick_cia_file
 from util.er3t_abs import mca_atm_lbl, mca_abs_lbl, set_per_g_rayleigh
 from util.mca_out_lbl import mca_out_lbl
 
@@ -135,6 +138,9 @@ class O2BandConfig:
                  szas=(0.0, 30.0, 60.0),
                  albedos=(0.0, 0.1),
                  dwvl=0.001, R=20000.0, ncut=3.0,
+                 cutoff_cm=DEFAULT_CUTOFF_CM,      # per-line wing cutoff, cm-1
+                 grid='vac',                       # output grid convention
+                 cia=None,                         # None|'auto'|path to a .cia
                  include_h2o=True,
                  z_top=70.0,                       # default 70 km; production run: 120
                  photons=1.0e6, Nrun=3,
@@ -155,6 +161,10 @@ class O2BandConfig:
         self.dwvl = float(dwvl)
         self.R = float(R)
         self.ncut = float(ncut)
+        self.cutoff_cm = None if cutoff_cm is None else float(cutoff_cm)
+        if grid not in ('vac', 'air'):
+            raise ValueError("grid must be 'vac' or 'air', got %r" % (grid,))
+        self.grid = grid
         self.include_h2o = bool(include_h2o)
         self.z_top = float(z_top)
         self.photons = float(photons)
@@ -173,6 +183,7 @@ class O2BandConfig:
         self.fname_afgl = os.path.join(self.data_dir, 'afglms.dat')
         self.fname_solar = os.path.join(self.data_dir, 'CU_composite_solar.dat')
         self.fname_spts = self._resolve_spts(spts)
+        self.fname_cia = self._resolve_cia(cia)
 
         self.mcarats_exe_env = mcarats_exe_env
         self.mcarats_exe = os.environ.get(mcarats_exe_env, None)
@@ -191,9 +202,42 @@ class O2BandConfig:
             raise OSError('Error [O2BandConfig]: SPTS file not found: %r' % spts)
         return spts
 
+    def _resolve_cia(self, cia):
+        """Locate the HITRAN O2-O2 CIA file: an explicit path, 'auto' (newest
+        ``O2-O2_*.cia`` in data_dir, if any), or None/'none' to exclude CIA --
+        the frozen Phase-1 setting (PLAN.md §7.4)."""
+        if cia in (None, 'none', 'off'):
+            return None
+        if cia == 'auto':
+            # pick by spectral coverage of the configured bands, not by name
+            ranges = [band_nu_range(BANDS[b], grid=self.grid) for b in self.bands]
+            try:
+                return pick_cia_file(self.data_dir, ranges)
+            except OSError as e:
+                raise OSError('Error [O2BandConfig]: cia="auto": %s' % e)
+        if not os.path.isfile(cia):
+            raise OSError('Error [O2BandConfig]: CIA file not found: %r' % cia)
+        return cia
+
+    def physics_stamp(self):
+        """Everything that changes the RT result but is NOT part of a chunk
+        file's path.  Chunk files are keyed by (band, sza, albedo, index) only,
+        so without this a rerun with different physics into an existing out_dir
+        would silently skip-if-done onto stale chunks."""
+        return dict(dwvl=self.dwvl, R=self.R, ncut=self.ncut,
+                    cutoff_cm=self.cutoff_cm, grid=self.grid,
+                    cia=(os.path.basename(self.fname_cia) if self.fname_cia
+                         else None),
+                    include_h2o=self.include_h2o, z_top=self.z_top,
+                    solver=self.solver,
+                    hitran=_file_id(self.fname_hitran),
+                    afgl=_file_id(self.fname_afgl))
+
     # ---- absorption cache identity: everything that changes the OD spectrum ---
     def absorption_key(self, band):
         payload = dict(band=band, dwvl=self.dwvl, R=self.R, ncut=self.ncut,
+                       cutoff_cm=self.cutoff_cm, grid=self.grid,
+                       cia=(_file_id(self.fname_cia) if self.fname_cia else None),
                        include_h2o=self.include_h2o, z_top=self.z_top,
                        hitran=_file_id(self.fname_hitran),
                        afgl=_file_id(self.fname_afgl))
@@ -205,6 +249,8 @@ class O2BandConfig:
             schema_version=_SCHEMA_VERSION,
             bands=list(self.bands), szas=list(self.szas), albedos=list(self.albedos),
             dwvl_nm=self.dwvl, resolving_power_R=self.R, wing_cutoff_N=self.ncut,
+            wing_cutoff_cm=(self.cutoff_cm if self.cutoff_cm is not None
+                            else 'legacy N*nu0/R'),
             include_h2o=self.include_h2o, z_top_km=self.z_top,
             photons=self.photons, min_photons_per_g=self.min_photons_per_g,
             photons_per_g_effective=max(self.photons, self.min_photons_per_g),
@@ -212,8 +258,18 @@ class O2BandConfig:
             wvl_range_nm=('full' if self.wvl_range is None else list(self.wvl_range)),
             solver=self.solver,
             line_shape='Voigt', hitran_version='HITRAN 2020',
-            partition_sums='TIPS-2021', wavelength_convention='air',
-            o2_cia='excluded', rayleigh='Bodhaine 1999',
+            partition_sums='TIPS-2021',
+            wavelength_convention=('vacuum' if self.grid == 'vac' else 'air'),
+            # Values are POINT SAMPLES at each grid wavelength, not averages over
+            # the 0.001 nm interval.  The two differ by up to ~3.5% in column OD
+            # and ~7% in reflectance on steep line flanks, because the narrowest
+            # (Doppler-limited, upper-atmosphere) lines are only ~1.5 grid points
+            # per FWHM.  Integrated over a band the difference vanishes (<1e-4%),
+            # so this matters for point-by-point comparison, not band metrics.
+            spectral_sampling='point (not cell-averaged)',
+            o2_cia=(os.path.basename(self.fname_cia) if self.fname_cia
+                    else 'excluded'),
+            rayleigh='Bodhaine 1999 (vacuum wavelength)',
             reflectance_def='rho = pi*I/(mu0*F0) = pi*R_raw/mu0',
             solar_source=('CU_composite_solar.dat x SPTS %s (F0 folded post-RT)'
                           % os.path.basename(self.fname_spts)
@@ -230,7 +286,9 @@ class O2BandConfig:
                         afgl=_file_id(self.fname_afgl),
                         solar=_file_id(self.fname_solar),
                         solar_spts=(_file_id(self.fname_spts)
-                                    if self.fname_spts else None)),
+                                    if self.fname_spts else None),
+                        cia=(_file_id(self.fname_cia)
+                             if self.fname_cia else None)),
         )
 
 
@@ -247,11 +305,13 @@ class O2BandSim:
         os.makedirs(cfg.out_dir, exist_ok=True)
         self._cache_dir = os.path.join(cfg.out_dir, '_absorption_cache')
         os.makedirs(self._cache_dir, exist_ok=True)
+        _check_physics_stamp(cfg)
 
         self.atm = afgl_atmosphere(cfg.fname_afgl, z_top=cfg.z_top)
         self.solar = (solar_spts(cfg.fname_solar, cfg.fname_spts)
                       if cfg.fname_spts else solar_cu(cfg.fname_solar))
         self.tips = tips2021(cfg.qtpy_dir)
+        self.cia = hitran_cia(cfg.fname_cia) if cfg.fname_cia else None
         self.mca_atm = mca_atm_lbl(self.atm)
 
     # --- absorption: build once per band, cache to disk ----------------------
@@ -262,9 +322,17 @@ class O2BandSim:
             with open(fcache, 'rb') as f:
                 return pickle.load(f)
         wl_min, wl_max = BANDS[band]
-        lines = hitran_lines(self.cfg.fname_hitran, wl_range=(wl_min, wl_max), margin_cm=5.0)
+        # the selection margin MUST track the wing cutoff, else lines just
+        # outside the window lose the wings that reach into it
+        margin = required_margin_cm((wl_min, wl_max), grid=self.cfg.grid,
+                                    R=self.cfg.R, ncut=self.cfg.ncut,
+                                    cutoff_cm=self.cfg.cutoff_cm)
+        lines = hitran_lines(self.cfg.fname_hitran, wl_range=(wl_min, wl_max),
+                             grid=self.cfg.grid, margin_cm=margin)
         absb = o2band_absorption(self.atm, lines, band=band, dwvl=self.cfg.dwvl,
                                  R=self.cfg.R, ncut=self.cfg.ncut,
+                                 cutoff_cm=self.cfg.cutoff_cm, grid=self.cfg.grid,
+                                 cia=self.cia,
                                  include_h2o=self.cfg.include_h2o, tips=self.tips)
         _atomic_pickle(fcache, absb)
         return absb
@@ -470,13 +538,15 @@ class O2BandSim:
         # geometry-independent optical thickness on the same grid
         od_o2 = absb.od['o2'][:, idx_all]
         od_h2o = absb.od['h2o'][:, idx_all] if 'h2o' in absb.od else np.zeros_like(od_o2)
-        od_ray = cal_rayleigh_od(absb.atm, wvl)               # (Nlay, Nw)
+        od_cia = absb.od_cia[:, idx_all]
+        # Bodhaine's Rayleigh fit is in vacuum wavelength, whatever grid we output on
+        od_ray = cal_rayleigh_od(absb.atm, absb.wvl_vac[idx_all])   # (Nlay, Nw)
 
         # write both the standalone per-band file and the merged-file group
         for target in (band_path, merged_grp):
             _write_band_payload(target, meta, band, self.cfg, wvl, f0,
                                 ref, ref_err, rad, rad_err,
-                                od_o2, od_h2o, od_ray, absb)
+                                od_o2, od_h2o, od_cia, od_ray, absb, idx_all)
         if verbose:
             print('assembled band %s -> %s' % (band, band_path))
 
@@ -485,7 +555,8 @@ class O2BandSim:
 #  helpers
 # ----------------------------------------------------------------------------- #
 def _write_band_payload(target, meta, band, cfg, wvl, f0,
-                        ref, ref_err, rad, rad_err, od_o2, od_h2o, od_ray, absb):
+                        ref, ref_err, rad, rad_err, od_o2, od_h2o, od_cia,
+                        od_ray, absb, idx_all):
     """Write a band's datasets into either a fresh HDF5 file (path) or a group."""
     close = False
     if isinstance(target, str):
@@ -495,10 +566,26 @@ def _write_band_payload(target, meta, band, cfg, wvl, f0,
     else:
         f = target
 
+    convention = 'vacuum' if cfg.grid == 'vac' else 'air'
     f.attrs['band'] = band
     f.attrs['band_range_nm'] = list(BANDS[band])
+    f.attrs['wavelength_convention'] = convention
     f.attrs['stderr_ddof'] = 1             # stderr datasets use sample std (ddof=1)
-    f.create_dataset('wvl', data=wvl)                        # air nm
+
+    # The primary grid is uniform in `convention`; both conventions are written
+    # so a comparison script can never pick the wrong axis by accident (the
+    # 0.2 nm air-vs-vacuum misregistration found 2026-07-25).
+    d = f.create_dataset('wvl', data=wvl)
+    d.attrs['units'] = 'nm'
+    d.attrs['convention'] = convention
+    d.attrs['long_name'] = 'wavelength (%s), uniform grid' % convention
+    d = f.create_dataset('wvl_vac', data=absb.wvl_vac[idx_all])
+    d.attrs['units'] = 'nm'; d.attrs['convention'] = 'vacuum'
+    d = f.create_dataset('wvl_air', data=absb.wvl_air[idx_all])
+    d.attrs['units'] = 'nm'; d.attrs['convention'] = 'air (Edlen 1966)'
+    d = f.create_dataset('nu_vac', data=absb.nu_vac[idx_all])
+    d.attrs['units'] = 'cm-1'; d.attrs['convention'] = 'vacuum wavenumber'
+
     f.create_dataset('sza', data=np.array(cfg.szas))
     f.create_dataset('albedo', data=np.array(cfg.albedos))
     f.create_dataset('f0', data=f0)                          # W m-2 nm-1
@@ -517,6 +604,12 @@ def _write_band_payload(target, meta, band, cfg, wvl, f0,
     g.create_dataset('o2_column', data=od_o2.sum(axis=0))
     g.create_dataset('h2o_column', data=od_h2o.sum(axis=0))
     g.create_dataset('rayleigh_column', data=od_ray.sum(axis=0))
+    # O2-O2 CIA: all-zero when excluded (the frozen Phase-1 setting), so the
+    # dataset is always present and the metadata says which it is.
+    d = g.create_dataset('o2_cia_layer', data=od_cia)
+    d.attrs['dims'] = '(layer, wvl)'
+    d.attrs['source'] = meta.get('o2_cia', 'excluded')
+    g.create_dataset('o2_cia_column', data=od_cia.sum(axis=0))
 
     geo = f.create_group('atmosphere')
     geo.create_dataset('z_lay_km', data=absb.atm.lay['z'])
@@ -533,6 +626,60 @@ def _write_meta(f, meta):
     g = f.create_group('metadata') if 'metadata' not in f else f['metadata']
     for k, v in meta.items():
         g.attrs[k] = json.dumps(v) if isinstance(v, (dict, list)) else v
+
+
+_STAMP_NAME = '_physics_config.json'
+
+
+def _check_physics_stamp(cfg):
+    """
+    Refuse to mix RT chunks computed under different physics in one out_dir.
+
+    Chunk files are addressed by (band, sza, albedo, grid index) alone, and
+    ``run`` is skip-if-done -- so pointing a run with a new wing cutoff / grid
+    convention / CIA setting at a directory that already holds chunks would
+    return the OLD numbers without a single warning.  The out_dir name is only
+    stamped with z_top/photons/Nrun, which does not cover any of that.
+
+    First use writes the stamp; later runs must match it.  A directory that
+    already contains chunks but no stamp (i.e. written before this guard) is
+    rejected too, since its physics cannot be verified.  Set
+    O2BAND_ALLOW_UNSTAMPED=1 to accept such a directory deliberately.
+    """
+    fstamp = os.path.join(cfg.out_dir, _STAMP_NAME)
+    want = cfg.physics_stamp()
+
+    if os.path.isfile(fstamp):
+        try:
+            with open(fstamp) as f:
+                have = json.load(f)
+        except (OSError, ValueError):
+            have = None
+        if have is not None and have != want:
+            diff = sorted(k for k in set(have) | set(want)
+                          if have.get(k) != want.get(k))
+            raise RuntimeError(
+                'Error [O2BandSim]: %s was written with a different physics '
+                'configuration; differing keys: %s\n  existing: %s\n  requested: %s\n'
+                'Use a different --out-dir (chunk files are not keyed by physics, '
+                'so reusing this one would silently skip onto stale chunks).'
+                % (cfg.out_dir, ', '.join(diff),
+                   {k: have.get(k) for k in diff}, {k: want.get(k) for k in diff}))
+        return
+
+    existing = glob.glob(os.path.join(cfg.out_dir, '*', '*', 'chunk_*.h5'))
+    if existing and os.environ.get('O2BAND_ALLOW_UNSTAMPED') != '1':
+        raise RuntimeError(
+            'Error [O2BandSim]: %s already holds %d chunk file(s) but no %s, so '
+            'the physics they were run with cannot be verified. Use a fresh '
+            '--out-dir, or set O2BAND_ALLOW_UNSTAMPED=1 if you are certain the '
+            'configuration matches.' % (cfg.out_dir, len(existing), _STAMP_NAME))
+
+    # atomic + race-tolerant: concurrent array tasks write identical content
+    tmp = '%s.%d.tmp' % (fstamp, os.getpid())
+    with open(tmp, 'w') as f:
+        json.dump(want, f, sort_keys=True, indent=2)
+    os.replace(tmp, fstamp)
 
 
 def _chunk_valid(fout, n_expected):
@@ -584,7 +731,20 @@ def _build_cli():
     p.add_argument('--albedos', nargs='+', type=float, default=None,
                    help='Lambertian albedos (default 0.0 0.1)')
     p.add_argument('--wvl-range', nargs=2, type=float, default=None,
-                   metavar=('A', 'B'), help='air-nm sub-window (default: full band)')
+                   metavar=('A', 'B'),
+                   help='nm sub-window in the grid convention (default: full band)')
+    p.add_argument('--grid', choices=('vac', 'air'), default=None,
+                   help="output wavelength convention (default vac; 'air' "
+                        'reproduces the pre-2026-07-25 delivery)')
+    p.add_argument('--cutoff-cm', type=float, default=None,
+                   help='per-line Voigt wing cutoff in cm-1, plain truncation '
+                        '(default 50)')
+    p.add_argument('--legacy-cutoff', action='store_true',
+                   help='use the legacy N*nu0/R cutoff (~2 cm-1) instead of an '
+                        'absolute one -- for reproducing earlier runs only')
+    p.add_argument('--cia', default=None, metavar='FILE|auto|none',
+                   help="O2-O2 CIA file (default none = Phase-1 frozen setting; "
+                        "'auto' picks the newest O2-O2_*.cia in the data dir)")
     p.add_argument('--photons', type=float, default=None, help='photons per g-point')
     p.add_argument('--nrun', type=int, default=None, help='independent MC runs')
     p.add_argument('--chunk-size', type=int, default=None, help='g-points per chunk')
@@ -635,6 +795,10 @@ if __name__ == '__main__':
     if args.z_top is not None:       kw['z_top'] = args.z_top
     if args.out_dir is not None:     kw['out_dir'] = args.out_dir
     if args.spts is not None:        kw['spts'] = args.spts
+    if args.grid is not None:        kw['grid'] = args.grid
+    if args.cia is not None:         kw['cia'] = args.cia
+    if args.legacy_cutoff:           kw['cutoff_cm'] = None
+    if args.cutoff_cm is not None:   kw['cutoff_cm'] = args.cutoff_cm
     if args.ncpu is not None:
         kw['Ncpu'] = args.ncpu if args.ncpu == 'auto' else int(args.ncpu)
 
@@ -646,9 +810,12 @@ if __name__ == '__main__':
 
     cfg = O2BandConfig(**kw)
     print('[sim_o2band] stage=%s shard=%s out_dir=%s bands=%s szas=%s albedos=%s '
-          'wvl_range=%s photons=%g Nrun=%d Ncpu=%s'
+          'wvl_range=%s photons=%g Nrun=%d Ncpu=%s grid=%s cutoff=%s cia=%s'
           % (stage, shard, cfg.out_dir, cfg.bands, cfg.szas, cfg.albedos,
-             cfg.wvl_range, cfg.photons, cfg.Nrun, cfg.Ncpu))
+             cfg.wvl_range, cfg.photons, cfg.Nrun, cfg.Ncpu, cfg.grid,
+             ('%g cm-1' % cfg.cutoff_cm if cfg.cutoff_cm is not None
+              else 'legacy %g*nu0/%g' % (cfg.ncut, cfg.R)),
+             os.path.basename(cfg.fname_cia) if cfg.fname_cia else 'none'))
     sim = O2BandSim(cfg)
 
     if stage == 'prep':

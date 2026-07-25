@@ -114,7 +114,10 @@ class mca_abs_lbl:
         coef['slit_func']['data'] (Nz, Ng)
 
     Extra bookkeeping (for output, not used by er3t):
-        wvls_air (Ng, nm), nu_vac (Ng, cm-1), idx (Ng,), f0 (Ng, solar irradiance)
+        wvls (Ng, nm, absb's grid convention), wvls_air / wvls_vac (Ng, nm),
+        nu_vac (Ng, cm-1), idx (Ng,), f0 (Ng, solar irradiance).
+        Solar F0 is looked up in AIR nm (the solar tables' convention) and
+        Rayleigh in VACUUM nm (Bodhaine's fit), regardless of the output grid.
     """
 
     def __init__(self, absb, idx=None, solar=None):
@@ -127,12 +130,15 @@ class mca_abs_lbl:
         self.idx = idx
         self.Ng = idx.size
 
-        self.wvls_air = absb.wvl[idx]
+        self.wvls = absb.wvl[idx]                  # grid convention of absb
+        self.wvls_air = absb.wvl_air[idx]          # F0 / solar lookups
+        self.wvls_vac = absb.wvl_vac[idx]          # Rayleigh (Bodhaine is vacuum)
         self.nu_vac = absb.nu_vac[idx]
         # single scalar wavelength for Rayleigh: chunk mean (must be a narrow chunk)
-        self.wvl = float(self.wvls_air.mean())
-        self.wvl_info = ('LBL %s: Ng=%d, %.4f-%.4f nm (air)'
-                         % (absb.band, self.Ng, self.wvls_air.min(), self.wvls_air.max()))
+        self.wvl = float(self.wvls_vac.mean())
+        self.wvl_info = ('LBL %s: Ng=%d, %.4f-%.4f nm (%s)'
+                         % (absb.band, self.Ng, self.wvls.min(), self.wvls.max(),
+                            absb.grid))
 
         nz = absb.od_total.shape[0]
         abso = absb.od_total[:, idx]          # (Nz, Ng), total gas absorption OT
@@ -148,7 +154,7 @@ class mca_abs_lbl:
         self.f0 = f0
 
         self.coef = {
-            'wvl':       {'name': 'Wavelength', 'units': 'nm', 'data': self.wvls_air.copy()},
+            'wvl':       {'name': 'Wavelength', 'units': 'nm', 'data': self.wvls.copy()},
             'abso_coef': {'name': 'Absorption optical depth (Nz, Ng)',
                           'data': np.ascontiguousarray(abso, dtype=np.float64)},
             'weight':    {'name': 'Weight (Ng)', 'data': np.ones(self.Ng, dtype=np.float64)},
@@ -163,12 +169,13 @@ class mca_abs_lbl:
         Per-layer Rayleigh OT at *each* g-point's own wavelength, shape (Nz, Ng).
         Exact at the 0.001 nm grid (no chunk averaging).
         """
-        return cal_rayleigh_od(self.absb.atm, self.wvls_air)
+        return cal_rayleigh_od(self.absb.atm, self.wvls_vac)
 
     def __repr__(self):
-        return ('mca_abs_lbl(band=%s): Ng=%d, %.4f-%.4f nm (air), wvl(Rayleigh)=%.4f nm'
-                % (self.absb.band, self.Ng, self.wvls_air.min(),
-                   self.wvls_air.max(), self.wvl))
+        return ('mca_abs_lbl(band=%s): Ng=%d, %.4f-%.4f nm (%s), '
+                'wvl(Rayleigh)=%.4f nm vac'
+                % (self.absb.band, self.Ng, self.wvls.min(), self.wvls.max(),
+                   self.absb.grid, self.wvl))
 
 
 def set_per_g_rayleigh(atm1d, mca_atm, mca_abs):

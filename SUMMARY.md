@@ -1,5 +1,12 @@
 # O2 A/B-band RT benchmark — experiment & product summary
 
+> **Superseded 2026-07-25.** This describes the first delivery, which used an
+> **air**-wavelength grid and a ~2 cm-1 line-wing cutoff. Both were revised
+> after participant feedback (vacuum grid; 25 cm-1 cutoff) — see PLAN.md
+> §7.2-§7.4 and the erratum at the top of EVAL_REPORT.md. Kept as the record
+> of what was delivered.
+
+
 High-spectral-resolution line-by-line benchmark of **top-of-atmosphere (TOA)
 reflectance** in the molecular-oxygen **A-band (757–772 nm)** and **B-band
 (680–695 nm)** under tightly prescribed clear-sky conditions, produced for the

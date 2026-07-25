@@ -15,6 +15,8 @@
 #     CORES   (8)    cores per array task (MCARaTS spreads a chunk's g-points over these)
 #     CAP     (20)   max array tasks running at once (concurrency = CAP*CORES cores)
 #     Z_TOP   (120)  km ;  PHOTONS (1e6) ;  NRUN (3)
+#     GRID    (vac)  vac|air ;  CUTOFF_CM (50) cm-1 ;  CIA (none) none|auto|FILE
+#     CHUNK   (1001) g-points per chunk -> 15 chunks/band, 180 work units total
 #     TIME_RUN(08:00:00)   walltime per array task
 #     OVERWRITE(0)   1 = recompute chunks even if valid
 #     NOISE_THRESHOLD(0.01)  p95 relative-stderr gate reported at assemble
@@ -35,6 +37,10 @@ export Z_TOP="${Z_TOP:-120}"
 export PHOTONS="${PHOTONS:-1e6}"
 export NRUN="${NRUN:-3}"
 export OVERWRITE="${OVERWRITE:-0}"
+export GRID="${GRID:-vac}"                 # output wavelength convention
+export CUTOFF_CM="${CUTOFF_CM:-50}"        # per-line Voigt wing cutoff, cm-1
+export CIA="${CIA:-none}"                  # O2-O2 CIA: none | auto | <file>
+export CHUNK="${CHUNK:-1001}"              # g-points per chunk (15001 -> 15 chunks)
 export NOISE_THRESHOLD="${NOISE_THRESHOLD:-0.01}"
 TIME_RUN="${TIME_RUN:-08:00:00}"
 
@@ -60,4 +66,5 @@ jid_asm=$(sbatch --parsable --dependency=afterok:${jid_run} --job-name=o2b_asm \
     --ntasks=2 --time=00:30:00 --partition=blanca --export=ALL "$STAGE" assemble)
 echo "  assemble job ${jid_asm}"
 
-echo "Submitted. Monitor:  squeue -u \$USER   |   outputs -> ${O2BAND_OUT_DIR:-/scratch/alpine/yuch8913/O2band_sim}/z${Z_TOP%.*}_p${PHOTONS}_n${NRUN}/"
+STAMP="${GRID}_c${CUTOFF_CM%.*}"; [ "$CIA" = "none" ] || STAMP="${STAMP}_cia"
+echo "Submitted. Monitor:  squeue -u \$USER   |   outputs -> ${O2BAND_OUT_DIR:-/scratch/alpine/yuch8913/O2band_sim}/z${Z_TOP%.*}_p${PHOTONS}_n${NRUN}_${STAMP}/"

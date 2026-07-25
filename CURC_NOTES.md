@@ -108,9 +108,48 @@ Tunable via environment (defaults in parentheses):
 | `CORES` | cores per array task | 8 |
 | `CAP` | max array tasks running at once (concurrency = `CAP*CORES` cores) | 20 |
 | `Z_TOP` / `PHOTONS` / `NRUN` | physics config (sets the output stamp) | 120 / 1e6 / 3 |
+| `GRID` | output wavelength convention, `vac` or `air` | vac |
+| `CUTOFF_CM` | per-line Voigt wing cutoff, cm-1 | 50 |
+| `CIA` | O2-O2 CIA: `none`, `auto`, or a file path | none |
+| `CHUNK` | g-points per chunk (1001 → 15 chunks/band, 180 work units) | 1001 |
 | `TIME_RUN` | walltime per array task | 08:00:00 |
 | `OVERWRITE` | 1 = recompute chunks even if valid | 0 |
 | `NOISE_THRESHOLD` | p95 relative-stderr gate reported at assemble | 0.01 |
+
+### Output directory is physics-stamped — this is a safety feature
+
+`GRID` / `CUTOFF_CM` / `CIA` go into the output directory name
+(`z120_p1e7_n3_vac_c50`), **and** `sim_o2band.py` writes `_physics_config.json`
+there and refuses to start if a later run's physics disagrees. This matters
+because chunk files are addressed by `(band, SZA, albedo, index)` alone and
+`run` is skip-if-done: pointing a new-physics run at an old directory would
+otherwise return the *old* numbers silently. A directory holding chunks but no
+`_physics_config.json` (i.e. written before 2026-07-25) is also rejected; set
+`O2BAND_ALLOW_UNSTAMPED=1` only if you are certain the configuration matches.
+
+### Production run (2026-07-25 corrections)
+
+```bash
+# on a login node, after `git pull`
+source setup_env.sh
+python tests/test_absorption.py && python tests/test_wings.py   # ~1 min, no RT
+python src/sim_o2band.py --test                                 # tiny end-to-end, needs MCARaTS
+
+PHOTONS=1e7 NRUN=3 Z_TOP=120 CAP=40 ./submit_o2band_array.sh
+#   -> /scratch/alpine/yuch8913/O2band_sim/z120_p1e7_n3_vac_c50/
+```
+
+`GRID=vac`, `CUTOFF_CM=50`, `CIA=none` are the defaults, so they need not be
+passed. Data staging is unchanged; the `.cia` file only needs staging if you
+set `CIA=auto` (then copy `data/O2-O2_2024.cia` into `$O2BAND_DATA_DIR` — note
+`O2-O2_exp_2021.cia` covers neither band and is rejected by the coverage check).
+
+Delivery copy, dropping the solar-flux-dependent radiance:
+
+```bash
+python src/make_delivery_h5.py \
+    /scratch/alpine/yuch8913/O2band_sim/z120_p1e7_n3_vac_c50/o2band_benchmark.h5
+```
 
 Makespan ≈ (total core-hours) / (`CAP*CORES`): CAP=20 → ~2.5 h, CAP=40 → ~1.3 h,
 subject to Blanca backfill. Each shard is a stride over a stable digest-ordered
@@ -123,7 +162,7 @@ per stage. `assemble` runs only if **all** array tasks succeed (`afterok`), so
 incomplete data is never assembled.
 
 Monitor: `squeue -u $USER`. Outputs land in
-`$O2BAND_OUT_DIR/z<ztop>_p<photons>_n<nrun>/`.
+`$O2BAND_OUT_DIR/z<ztop>_p<photons>_n<nrun>_<grid>_c<cutoff>[_cia]/`.
 
 ## Noise check
 

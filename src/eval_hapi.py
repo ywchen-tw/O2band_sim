@@ -36,7 +36,8 @@ sys.path.insert(0, _HERE)
 
 from util.atmosphere import afgl_atmosphere
 from util.tips import tips2021
-from util.absorption import hitran_lines, o2band_absorption, BANDS, MOL_O2
+from util.absorption import (hitran_lines, o2band_absorption, required_margin_cm,
+                             BANDS, MOL_O2)
 from util.optics import air_to_vac_nm
 from eval_metrics import diff_stats, print_diff_stats
 
@@ -89,7 +90,9 @@ def run(bands, z_top, cache_dir, layers=None):
     for band in bands:
         wl0, wl1 = BANDS[band]
         # our absorption (O2 only here; matches HAPI SourceTables='O2')
-        lines = hitran_lines(fhit, wl_range=(wl0, wl1), margin_cm=5.0)
+        # margin must track the wing cutoff (PLAN.md §7.3), not be hardcoded
+        lines = hitran_lines(fhit, wl_range=(wl0, wl1),
+                             margin_cm=required_margin_cm((wl0, wl1)))
         absb = o2band_absorption(atm, lines, band=band, include_h2o=False, tips=tips)
 
         # vacuum-wavenumber span for the HAPI fetch (with margin)

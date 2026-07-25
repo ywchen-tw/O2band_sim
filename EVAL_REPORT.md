@@ -18,6 +18,22 @@ statistics carry over.  Generated 2026-07-06; production photons raised to
 The participant-model ensemble (KNMI intercomparison) was **not available**, so
 this evaluation rests on independent public references and local model reruns.
 
+> **Erratum (2026-07-25) — two findings from the participant feedback supersede
+> parts of this report.** (1) The delivered air-wavelength grid is displaced
+> −0.19 to −0.21 nm from the vacuum grid the other participants use; a
+> convention mismatch, not a physics error (line positions round-trip to
+> <0.001 nm). (2) The production wing cutoff (±N·ν₀/R ≈ 2 cm⁻¹) discarded
+> ~0.055 of column OD in the A-band micro-windows. **This invalidates the
+> attribution in §5**: the 8–9× between-line deficit vs ABSCO was mostly wing
+> truncation, not the omitted CIA + line mixing. With untruncated wings our
+> between-line σ is ~1.6e-26 cm², ~7× *above* ABSCO — a pure Voigt far wing
+> overshoots. **Check #4 could not have caught this**: `eval_hapi_local.py`
+> builds its HAPI table from the same band ±5 cm⁻¹ line subset, so both codes
+> were truncated identically. `tests/test_wings.py` (brute-force, no cutoff) now
+> covers it. Both defects are fixed in code; PLAN.md §7.2–§7.4 record the
+> revised decisions. The reflectance figures below are from the superseded
+> production run and stand only as a record of it.
+
 > Erratum (2026-07-06): the delivered `reflectance_stderr`/`radiance_stderr` were
 > originally computed with the population std (ddof=0) over the Nrun=3 runs and
 > have been rescaled in place to the unbiased sample std (ddof=1), a uniform
