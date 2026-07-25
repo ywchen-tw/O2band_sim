@@ -32,6 +32,7 @@ _REPO = os.path.dirname(_HERE)
 sys.path.insert(0, os.path.join(_REPO, 'src'))
 DATA = os.environ.get('O2BAND_DATA_DIR', os.path.join(_REPO, 'data'))
 
+from util.inputs import require_inputs, MissingInputs
 from util.atmosphere import afgl_atmosphere
 from util.tips import tips2021
 from util.optics import air_to_vac_nm, vac_to_air_nm
@@ -194,6 +195,12 @@ def w7_cia(atm, tips, absb_def):
 
 # ---------------------------------------------------------------------------- #
 if __name__ == '__main__':
+
+    try:
+        require_inputs('hitran2020_lines.txt', 'afglms.dat', qtpy=True)
+    except MissingInputs as e:
+        print('[SETUP] %s' % e)
+        sys.exit(2)
 
     print('Wing-cutoff / grid-convention regression suite')
     print('window %.1f-%.1f nm vacuum @ %.3f nm, z_top %.0f km, %s\n'

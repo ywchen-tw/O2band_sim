@@ -36,6 +36,7 @@ import numpy as np
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 
+from util.inputs import require_inputs, MissingInputs
 from util.atmosphere import afgl_atmosphere
 from util.tips import tips2021
 from util.absorption import (hitran_lines, o2band_absorption, cal_rayleigh_od,
@@ -69,6 +70,10 @@ def main():
     args = p.parse_args()
 
     win = tuple(args.window)
+    try:
+        require_inputs('hitran2020_lines.txt', 'afglms.dat', qtpy=True)
+    except MissingInputs as e:
+        sys.exit('[SETUP] %s' % e)
     atm = afgl_atmosphere(os.path.join(DATA, 'afglms.dat'), z_top=args.z_top)
     tips = tips2021()
 

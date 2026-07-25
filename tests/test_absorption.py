@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(_REPO, 'src'))
 # Inputs live under O2BAND_DATA_DIR (scratch on CURC); fall back to repo data/.
 DATA = os.environ.get('O2BAND_DATA_DIR', os.path.join(_REPO, 'data'))
 
+from util.inputs import require_inputs, MissingInputs
 from util.atmosphere import afgl_atmosphere
 from util.tips import tips2021
 from util.optics import air_to_vac_nm, refractive_index_air
@@ -264,6 +265,12 @@ def main():
     print('=' * 78)
     print('O2-band absorption validation  (PLAN.md §6)')
     print('=' * 78)
+    # One clear message beats a FileNotFoundError traceback per check
+    try:
+        require_inputs('hitran2020_lines.txt', 'afglms.dat', qtpy=True)
+    except MissingInputs as e:
+        print('[SETUP] %s' % e)
+        return 2
     n_pass = 0
     for name, fn in CHECKS:
         try:
