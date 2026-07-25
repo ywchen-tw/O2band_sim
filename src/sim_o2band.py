@@ -799,6 +799,16 @@ if __name__ == '__main__':
     if args.cia is not None:         kw['cia'] = args.cia
     if args.legacy_cutoff:           kw['cutoff_cm'] = None
     if args.cutoff_cm is not None:   kw['cutoff_cm'] = args.cutoff_cm
+
+    # --test writes into its own physics-stamped subdirectory, never the shared
+    # output base: the base may already hold chunks from other runs, and chunk
+    # paths carry no physics identity, so a smoke test dropped there would both
+    # trip the _physics_config.json guard and risk being mistaken for real data.
+    if args.test and args.out_dir is None:
+        cut = kw.get('cutoff_cm', DEFAULT_CUTOFF_CM)
+        stamp = '%s_c%s' % (kw.get('grid', 'vac'),
+                            'legacy' if cut is None else '%g' % cut)
+        kw['out_dir'] = os.path.join(_default_out_dir(), '_smoketest_%s' % stamp)
     if args.ncpu is not None:
         kw['Ncpu'] = args.ncpu if args.ncpu == 'auto' else int(args.ncpu)
 
