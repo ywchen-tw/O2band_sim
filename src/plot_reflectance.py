@@ -85,7 +85,7 @@ def plot(h5path, out_png, noise=False):
                ncol=5, frameon=False, fontsize=10, columnspacing=1.8, handlelength=2.2)
 
     title = ('Monte-Carlo reflectance noise' if noise else 'TOA reflectance')
-    fig.suptitle('%s — O$_2$ A/B-band Phase-1 benchmark%s' % (title, run_label),
+    fig.suptitle('%s — O$_2$ A/B-band %s' % (title, run_label),
                  fontsize=12)
     fig.tight_layout(rect=[0, 0.06, 1, 0.95])       # reserve bottom (legend) + top (suptitle)
     fig.savefig(out_png, dpi=200)
