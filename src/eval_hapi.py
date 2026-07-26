@@ -37,8 +37,7 @@ sys.path.insert(0, _HERE)
 from util.atmosphere import afgl_atmosphere
 from util.tips import tips2021
 from util.absorption import (hitran_lines, o2band_absorption, required_margin_cm,
-                             BANDS, MOL_O2)
-from util.optics import air_to_vac_nm
+                             band_nu_range, BANDS, MOL_O2, DEFAULT_CUTOFF_CM)
 from eval_metrics import diff_stats, print_diff_stats
 
 
@@ -57,16 +56,37 @@ def our_sigma_layer(absb, atm, iz, gas='o2'):
     return nu[order], sigma[order]
 
 
-def hapi_sigma_layer(hapi, table, nu_grid, p_hpa, T, vmr):
-    """HAPI cross-section sigma(nu) [cm^2/molecule] at (p, T, self-fraction vmr)."""
+def hapi_sigma_layer(hapi, table, nu_grid, p_hpa, T, vmr,
+                     wing_cm=DEFAULT_CUTOFF_CM):
+    """HAPI cross-section sigma(nu) [cm^2/molecule] at (p, T, self-fraction vmr).
+
+    The wing cutoff MUST match ours or this is not a like-for-like comparison.
+    HAPI's default is 50 half-widths -- about 2 cm-1 at surface pressure --
+    against our 50 cm-1, and the far wing is precisely what the 2026-07-25
+    finding was about, so leaving it at the default would manufacture a
+    disagreement and blame it on our code.
+
+    HAPI renamed OmegaWing/OmegaWingHW to WavenumberWing/WavenumberWingHW; try
+    the modern spelling first and fall back, since which one a given hitran-api
+    release accepts is not something we can assume.  WingHW=0 makes the absolute
+    wing govern rather than a multiple of the half-width.
+    """
     p_atm = p_hpa / 1013.25
-    nu_out, coef = hapi.absorptionCoefficient_Voigt(
-        SourceTables=table,
-        Environment={'p': p_atm, 'T': float(T)},
-        Diluent={'air': 1.0 - vmr, 'self': vmr},
-        WavenumberGrid=np.ascontiguousarray(nu_grid, dtype=np.float64),
-        HITRAN_units=True)                              # cm^2/molecule
-    return np.asarray(nu_out), np.asarray(coef)
+    kw = dict(SourceTables=table,
+              Environment={'p': p_atm, 'T': float(T)},
+              Diluent={'air': 1.0 - vmr, 'self': vmr},
+              WavenumberGrid=np.ascontiguousarray(nu_grid, dtype=np.float64),
+              HITRAN_units=True)                        # cm^2/molecule
+    for wing in ({'WavenumberWing': wing_cm, 'WavenumberWingHW': 0.0},
+                 {'OmegaWing': wing_cm, 'OmegaWingHW': 0.0}):
+        try:
+            nu_out, coef = hapi.absorptionCoefficient_Voigt(**dict(kw, **wing))
+        except TypeError:
+            continue
+        return np.asarray(nu_out), np.asarray(coef)
+    raise TypeError('hapi.absorptionCoefficient_Voigt accepts neither '
+                    'WavenumberWing nor OmegaWing, so our %g cm-1 wing cutoff '
+                    'cannot be matched; comparison would be invalid' % wing_cm)
 
 
 def run(bands, z_top, cache_dir, layers=None):
@@ -95,9 +115,12 @@ def run(bands, z_top, cache_dir, layers=None):
                              margin_cm=required_margin_cm((wl0, wl1)))
         absb = o2band_absorption(atm, lines, band=band, include_h2o=False, tips=tips)
 
-        # vacuum-wavenumber span for the HAPI fetch (with margin)
-        wl_vac = air_to_vac_nm(np.array([wl0, wl1]))
-        nu_lo, nu_hi = 1.0e7 / wl_vac.max() - 5.0, 1.0e7 / wl_vac.min() + 5.0
+        # Vacuum-wavenumber span for the HAPI fetch.  The margin must cover our
+        # wing cutoff, else HAPI's line list omits the out-of-window lines whose
+        # wings reach into the band and the two codes are not comparable.
+        margin = required_margin_cm((wl0, wl1))
+        nu_lo, nu_hi = band_nu_range((wl0, wl1), grid='vac')
+        nu_lo, nu_hi = nu_lo - margin, nu_hi + margin
         table = 'O2_%s' % band
         if not os.path.isfile(os.path.join(cache_dir, table + '.data')):
             print('[hapi] fetching %s O2 lines %.1f-%.1f cm-1 ...' % (band, nu_lo, nu_hi))

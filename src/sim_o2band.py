@@ -498,6 +498,64 @@ class O2BandSim:
             print('assembled merged file: %s' % merged_path)
         return merged_path, band_files
 
+    def _require_all_chunks(self, band, absb):
+        """
+        Check every chunk of a band up front and report the whole picture.
+
+        Failing on the first missing file told you nothing about the scale of
+        the problem -- whether one shard died or a third of the array was
+        preempted -- and nothing about *why* a file was absent.  The two real
+        causes look identical from a single path: an incomplete run, and an
+        assemble whose --chunk-size differs from the run's (chunk size sets the
+        filenames, so every path is "missing").  So count the gaps per geometry
+        and, when nothing at all matches, infer the chunk size actually on disk.
+        """
+        expected = [self._chunk_path(band, sza, alb, idx_chunk)
+                    for sza in self.cfg.szas
+                    for alb in self.cfg.albedos
+                    for idx_chunk in self._chunks(absb)]
+        sizes = {p: idx.size for p, idx in
+                 zip(expected, [c for _ in self.cfg.szas for _ in self.cfg.albedos
+                                for c in self._chunks(absb)])}
+        missing = [p for p in expected if not _chunk_valid(p, sizes[p])]
+        if not missing:
+            return
+
+        lines = ['Error [assemble]: %d of %d %s chunks missing or invalid'
+                 % (len(missing), len(expected), band)]
+
+        # per-geometry breakdown
+        for sza in self.cfg.szas:
+            for alb in self.cfg.albedos:
+                d = os.path.dirname(self._chunk_path(
+                    band, sza, alb, next(iter(self._chunks(absb)))))
+                n = sum(1 for p in missing if os.path.dirname(p) == d)
+                if n:
+                    lines.append('    sza%02d alb%.2f : %2d missing'
+                                 % (int(round(sza)), alb, n))
+
+        # a chunk-size mismatch makes EVERY path miss while files do exist
+        if len(missing) == len(expected):
+            found = sorted(glob.glob(os.path.join(
+                self.cfg.out_dir, band, '*', 'chunk_*.h5')))
+            if found:
+                try:
+                    stem = os.path.basename(found[0])[len('chunk_'):-len('.h5')]
+                    i0, i1 = (int(x) for x in stem.split('_'))
+                    lines.append('')
+                    lines.append('  %d chunk file(s) DO exist but none match: on-disk '
+                                 'chunks look like chunk_size=%d, this run asked for %d.'
+                                 % (len(found), i1 - i0 + 1, self.cfg.chunk_size))
+                    lines.append('  Re-run assemble with --chunk-size %d.' % (i1 - i0 + 1))
+                except ValueError:
+                    pass
+        else:
+            lines.append('')
+            lines.append('  first missing: %s' % missing[0])
+            lines.append('  Re-run the `run` stage to fill the gaps -- completed '
+                         'chunks are skipped, so only these recompute.')
+        raise OSError('\n'.join(lines))
+
     def _assemble_band(self, band, absb, idx_all, band_path, merged_grp, meta, verbose=True):
         wvl = absb.wvl[idx_all]
         nsza, nalb, nw = len(self.cfg.szas), len(self.cfg.albedos), idx_all.size
@@ -511,12 +569,12 @@ class O2BandSim:
         # it below, so a solar-model change never requires re-running the RT
         f0 = self.solar.interp(wvl)
 
+        self._require_all_chunks(band, absb)
+
         for isza, sza in enumerate(self.cfg.szas):
             for ialb, alb in enumerate(self.cfg.albedos):
                 for idx_chunk in self._chunks(absb):
                     fchunk = self._chunk_path(band, sza, alb, idx_chunk)
-                    if not _chunk_valid(fchunk, idx_chunk.size):
-                        raise OSError('Error [assemble]: missing/invalid chunk %s' % fchunk)
                     with h5py.File(fchunk, 'r') as f:
                         cidx = f['idx'][:]
                         cols = [pos[int(k)] for k in cidx]

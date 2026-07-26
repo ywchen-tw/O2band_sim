@@ -27,8 +27,7 @@ sys.path.insert(0, _HERE)
 from util.atmosphere import afgl_atmosphere
 from util.tips import tips2021
 from util.absorption import (hitran_lines, o2band_absorption, required_margin_cm,
-                             BANDS, MOL_O2)
-from util.optics import air_to_vac_nm
+                             band_nu_range, BANDS, MOL_O2)
 from eval_metrics import diff_stats, print_diff_stats
 from eval_hapi import our_sigma_layer, hapi_sigma_layer
 
@@ -66,9 +65,12 @@ _PAR_HEADER = {
 def register_local_table(fhitran, band, cache_dir):
     """Write the O2 lines of `band` from our HITRAN 2020 .par into a HAPI table
     (verbatim 160-char lines, so intensities/positions are exactly ours)."""
-    wl0, wl1 = BANDS[band]
-    wl_vac = air_to_vac_nm(np.array([wl0, wl1]))
-    nu_lo, nu_hi = 1.0e7 / wl_vac.max() - 5.0, 1.0e7 / wl_vac.min() + 5.0
+    # Band limits are VACUUM (PLAN.md 7.2), and the margin must cover our wing
+    # cutoff: a +/-5 cm-1 table against our +/-51 cm-1 line selection would omit
+    # exactly the far-wing lines the 2026-07-25 cutoff fix added.
+    margin = required_margin_cm(BANDS[band])
+    nu_lo, nu_hi = band_nu_range(BANDS[band], grid='vac')
+    nu_lo, nu_hi = nu_lo - margin, nu_hi + margin
     table = 'O2_%s_2020' % band
 
     kept = []

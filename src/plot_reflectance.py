@@ -11,6 +11,7 @@ albedo 0.1 ~0.10 surface-dominated, albedo 0.0 ~0.01 Rayleigh).
 """
 
 import os
+import glob
 import sys
 import argparse
 import numpy as np
@@ -94,9 +95,13 @@ def plot(h5path, out_png, noise=False):
 
 if __name__ == '__main__':
     _HERE = os.path.dirname(os.path.abspath(__file__))
-    default_h5 = os.path.join(
-        os.environ.get('O2BAND_OUT_DIR', os.path.join(_HERE, '..', 'out')),
-        'z120_p1e7_n3', 'o2band_benchmark.h5')
+    # Default to the most recently assembled run rather than a fixed directory
+    # name: a hardcoded run goes stale the moment the physics changes, and
+    # silently plotting a superseded run is worse than failing to find one.
+    _base = os.environ.get('O2BAND_OUT_DIR', os.path.join(_HERE, '..', 'out'))
+    _hits = glob.glob(os.path.join(_base, '*', 'o2band_benchmark.h5'))
+    default_h5 = (max(_hits, key=os.path.getmtime) if _hits
+                  else os.path.join(_base, 'o2band_benchmark.h5'))
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument('h5', nargs='?', default=default_h5)
