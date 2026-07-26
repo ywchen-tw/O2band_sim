@@ -32,9 +32,9 @@ cd "$(dirname "$0")"
 export BANDS="${*:-o2a o2b}"
 export NTASKS="${NTASKS:-48}"
 CORES="${CORES:-8}"
-CAP="${CAP:-20}"
+CAP="${CAP:-50}"
 export Z_TOP="${Z_TOP:-120}"
-export PHOTONS="${PHOTONS:-1e6}"
+export PHOTONS="${PHOTONS:-1e7}"
 export NRUN="${NRUN:-3}"
 export OVERWRITE="${OVERWRITE:-0}"
 export GRID="${GRID:-vac}"                 # output wavelength convention
@@ -42,7 +42,7 @@ export CUTOFF_CM="${CUTOFF_CM:-50}"        # per-line Voigt wing cutoff, cm-1
 export CIA="${CIA:-none}"                  # O2-O2 CIA: none | auto | <file>
 export CHUNK="${CHUNK:-1001}"              # g-points per chunk (15001 -> 15 chunks)
 export NOISE_THRESHOLD="${NOISE_THRESHOLD:-0.01}"
-TIME_RUN="${TIME_RUN:-08:00:00}"
+TIME_RUN="${TIME_RUN:-16:00:00}"
 
 STAGE=curc_stage_blanca_o2band.sh
 LAST=$((NTASKS - 1))
