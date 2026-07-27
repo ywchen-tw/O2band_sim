@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/bin/bash
 
 #SBATCH --nodes=1
 #SBATCH --time=08:00:00
@@ -21,13 +21,13 @@
 #   assemble : stitch all chunk files into per-band + merged HDF5, then report MC
 #              noise per band (non-fatal gate).
 
-module load anaconda intel/2022.1.2 hdf5/1.10.1 zlib/1.2.11 netcdf/4.8.1 swig/4.1.1 gsl/2.7
-conda activate er3t
+set -euo pipefail
 
 PROJECT_ROOT="/projects/yuch8913/O2band_sim"
 cd "$PROJECT_ROOT"
+source curc_runtime.sh
 source setup_env.sh
-export PYTHONPATH="$PROJECT_ROOT/src:$PYTHONPATH"
+export PYTHONPATH="$PROJECT_ROOT/src:${PYTHONPATH:-}"
 
 STAGE="${1:?usage: curc_stage_blanca_o2band.sh prep|run|assemble}"
 
@@ -58,21 +58,21 @@ COMMON="${COMMON} --chunk-size ${CHUNK}"
 case "$STAGE" in
   prep)
     echo "[prep] bands=[${BANDS}] out=${OUT}"
-    python src/sim_o2band.py --stage prep $COMMON
+    "$O2BAND_PYTHON" src/sim_o2band.py --stage prep $COMMON
     ;;
   run)
     T="${SLURM_ARRAY_TASK_ID:?run stage must be launched as a SLURM array job}"
     NCPU="${SLURM_NTASKS:-8}"
     echo "[run] shard ${T}/${NTASKS}  ncpu=${NCPU}  bands=[${BANDS}]  out=${OUT}"
-    python src/sim_o2band.py --stage run --shard "$T" "$NTASKS" \
+    "$O2BAND_PYTHON" src/sim_o2band.py --stage run --shard "$T" "$NTASKS" \
         --ncpu "$NCPU" $COMMON $OVERWRITE_FLAG
     ;;
   assemble)
     echo "[assemble] bands=[${BANDS}] out=${OUT}"
-    python src/sim_o2band.py --stage assemble $COMMON
+    "$O2BAND_PYTHON" src/sim_o2band.py --stage assemble $COMMON
     # Non-fatal noise gate: report worst-case MC noise per band.
     for b in $BANDS; do
-        python src/noise_report.py "${OUT}/${b}.h5" --threshold "${NOISE_THRESHOLD:-0.01}" \
+        "$O2BAND_PYTHON" src/noise_report.py "${OUT}/${b}.h5" --threshold "${NOISE_THRESHOLD:-0.01}" \
             || echo "[assemble] WARNING: ${b} exceeds noise threshold ${NOISE_THRESHOLD:-0.01}"
     done
     ;;

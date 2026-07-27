@@ -38,23 +38,26 @@ activating it usually needs no `sys.path` hacks. The MCARaTS v0.10.4 executable 
 the MCARaTS executable, and the scratch data/QTpy/output bases:
 
 ```bash
-module load anaconda intel/2022.1.2 hdf5/1.10.1 zlib/1.2.11 netcdf/4.8.1 swig/4.1.1 gsl/2.7
-conda activate er3t
+source curc_runtime.sh        # native modules + absolute er3t-env interpreter
 source setup_env.sh          # ER3T_HOME, MCARATS_V010_EXE, O2BAND_{DATA,QTPY,OUT}_DIR
-export PYTHONPATH="$PWD/src:$PYTHONPATH"
+export PYTHONPATH="$PWD/src:${PYTHONPATH:-}"
 
-python tests/test_absorption.py     # 10/10 physics validation checks (no MCARaTS needed)
+"$O2BAND_PYTHON" tests/test_absorption.py  # 10/10 physics checks (no MCARaTS needed)
 ```
 
-Use the `er3t` conda env's interpreter
-(`/projects/yuch8913/software/anaconda/envs/er3t/bin/python`) — the system
-`python3` lacks `h5py`/er3t.
+[`curc_runtime.sh`](curc_runtime.sh) loads the compiler before its dependent
+libraries, as required by CURC's hierarchical module stack, and directly selects
+the `er3t` environment's interpreter
+(`/projects/yuch8913/software/anaconda/envs/er3t/bin/python`). This avoids relying
+on a `conda` shell function in a non-interactive Slurm shell. Override the
+environment with `O2BAND_CONDA_ENV` or the interpreter with `O2BAND_PYTHON`.
+The system `python3` lacks `h5py`/er3t.
 
 ## Single-node runner
 
 [`curc_shell_blanca_o2band.sh`](curc_shell_blanca_o2band.sh) — one SBATCH job on
 one node (account `blanca-airs`, `preemptable` QOS, `--requeue`). Loads modules,
-activates `er3t`, sources `setup_env.sh`, and calls the driver CLI.
+selects the `er3t` interpreter, sources `setup_env.sh`, and calls the driver CLI.
 
 ```bash
 sbatch curc_shell_blanca_o2band.sh test        # fast RT sanity run (closes PLAN.md V7)

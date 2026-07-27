@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/bin/bash
 
 #SBATCH --nodes=1
 #SBATCH --ntasks=2
@@ -16,13 +16,13 @@
 # libRadtran workflow. Run on a node where uvspec works:
 #     bash curc_lrt_eval.sh   (or sbatch)
 
-module load anaconda intel/2022.1.2 hdf5/1.10.1 zlib/1.2.11 netcdf/4.8.1 swig/4.1.1 gsl/2.7
-conda activate er3t
+set -euo pipefail
 
 PROJECT_ROOT="/projects/yuch8913/O2band_sim"
 cd "$PROJECT_ROOT"
+source curc_runtime.sh
 source setup_env.sh
-export PYTHONPATH="$PROJECT_ROOT/src:$PYTHONPATH"
+export PYTHONPATH="$PROJECT_ROOT/src:${PYTHONPATH:-}"
 # libRadtran install used by the arcsix workflow (already the env default here)
 export LIBRADTRAN_V2_DIR="${LIBRADTRAN_V2_DIR:-/projects/yuch8913/wen_soft/libRadtran-2.0.6}"
 
@@ -43,8 +43,8 @@ OUR_H5="${OUR_H5:-${RUN_DIR}/${BAND}.h5}"
 # spanning column gas OD ~0.05-3); default runs the window (pure-Rayleigh) check.
 if [ "${INBAND:-0}" = "1" ]; then
     echo "[lrt] INBAND  uvspec=$LIBRADTRAN_V2_DIR/bin/uvspec  our=$OUR_H5  band=$BAND"
-    python src/eval_lrt_inband.py "$OUR_H5" --band "$BAND" --streams "${STREAMS:-16}"
+    "$O2BAND_PYTHON" src/eval_lrt_inband.py "$OUR_H5" --band "$BAND" --streams "${STREAMS:-16}"
 else
     echo "[lrt] window  uvspec=$LIBRADTRAN_V2_DIR/bin/uvspec  our=$OUR_H5  band=$BAND  n_wvl=${N_WVL:-6}"
-    python src/eval_lrt.py "$OUR_H5" --band "$BAND" --streams "${STREAMS:-16}" --n-wvl "${N_WVL:-6}"
+    "$O2BAND_PYTHON" src/eval_lrt.py "$OUR_H5" --band "$BAND" --streams "${STREAMS:-16}" --n-wvl "${N_WVL:-6}"
 fi

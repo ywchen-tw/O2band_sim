@@ -91,6 +91,7 @@ o2band_sim/
 ├── README.md
 ├── CURC_NOTES.md               # CURC/Blanca deployment: env, scratch paths, batch runs
 ├── setup_env.sh                # env helper (ER3T_HOME, MCARaTS, data/out paths)
+├── curc_runtime.sh              # CURC native modules + er3t Python interpreter
 ├── curc_shell_blanca_o2band.sh # single-node SBATCH runner        (CURC — see CURC_NOTES.md)
 ├── curc_stage_blanca_o2band.sh # parametrized prep|run|assemble stage runner   (CURC)
 ├── submit_o2band_array.sh      # submits the parallel prep->array->assemble pipeline (CURC)

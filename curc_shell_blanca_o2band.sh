@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/bin/bash
 
 #SBATCH --nodes=1
 #SBATCH --ntasks=32
@@ -17,17 +17,17 @@
 
 
 
-module load anaconda intel/2022.1.2 hdf5/1.10.1 zlib/1.2.11 netcdf/4.8.1 swig/4.1.1 gsl/2.7
-conda activate er3t
+set -euo pipefail
 
 PROJECT_ROOT="/projects/yuch8913/O2band_sim"
 cd "$PROJECT_ROOT"
+source curc_runtime.sh
 
 # Sets ER3T_HOME, PYTHONPATH (er3t), MCARATS_V010_EXE, and O2BAND_OUT_DIR
 # (scratch). er3t is editable-installed in the `er3t` conda env, so this mainly
 # pins MCARaTS + the scratch output base and is harmless if already set.
 source setup_env.sh
-export PYTHONPATH="$PROJECT_ROOT/src:$PYTHONPATH"
+export PYTHONPATH="$PROJECT_ROOT/src:${PYTHONPATH:-}"
 
 # Usage: sbatch curc_shell_blanca_o2band.sh [MODE] [BANDS...]
 #   MODE  : test | full  (default test)
@@ -42,14 +42,14 @@ export PYTHONPATH="$PROJECT_ROOT/src:$PYTHONPATH"
 #   sbatch curc_shell_blanca_o2band.sh full o2a
 #   Z_TOP=70 sbatch curc_shell_blanca_o2band.sh full o2a   # 70 km scaling test
 MODE="${1:-test}"
-shift 2>/dev/null
+[ "$#" -eq 0 ] || shift
 BANDS=("$@")   # remaining args = explicit band list (may be empty)
 
 # MCARaTS parallelises the g-points of one chunk across cores, so give the run
 # the cores this allocation holds (override with NCPU). Each g-point is a
 # lightweight monochromatic solve, so -- unlike the uvspec/CRE runner -- memory
 # is not the binding constraint here; core count is.
-NCPU="${NCPU:-$SLURM_NTASKS}"
+NCPU="${NCPU:-${SLURM_NTASKS:-}}"
 [ -z "$NCPU" ] && NCPU="auto"
 echo "Alloc ${SLURM_NTASKS:-?} cores -> Ncpu=${NCPU}, mode=${MODE}, bands=[${BANDS[*]:-default}]"
 
@@ -83,7 +83,7 @@ if [ "$MODE" = "test" ]; then
     ZT="${Z_TOP:-70}"; PH="${PHOTONS:-1e4}"; NR="${NRUN:-2}"
     OUT="${BASE_OUT}/test_z$(printf '%.0f' "$ZT")_p${PH}_n${NR}"
     echo "mode=test  z_top=${ZT} photons=${PH} Nrun=${NR}  out=${OUT}"
-    python src/sim_o2band.py --test \
+    "$O2BAND_PYTHON" src/sim_o2band.py --test \
         --z-top "$ZT" --photons "$PH" --nrun "$NR" \
         --ncpu "$NCPU" --out-dir "$OUT" $OVERWRITE_FLAG
 else
@@ -92,7 +92,7 @@ else
     ZT="${Z_TOP:-120}"; PH="${PHOTONS:-1e6}"; NR="${NRUN:-3}"
     OUT="${BASE_OUT}/z$(printf '%.0f' "$ZT")_p${PH}_n${NR}"
     echo "mode=full  z_top=${ZT} photons=${PH} Nrun=${NR} szas=[${SZAS:-all}] albedos=[${ALBEDOS:-all}]  out=${OUT}"
-    python src/sim_o2band.py \
+    "$O2BAND_PYTHON" src/sim_o2band.py \
         --z-top "$ZT" --photons "$PH" --nrun "$NR" \
         --ncpu "$NCPU" --out-dir "$OUT" \
         $BANDS_FLAG $SZAS_FLAG $ALBEDOS_FLAG $OVERWRITE_FLAG

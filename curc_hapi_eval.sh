@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/bin/bash
 
 #SBATCH --nodes=1
 #SBATCH --ntasks=4
@@ -20,18 +20,19 @@
 # (It also carries SBATCH headers in case a given partition's nodes do have
 # network and you prefer to submit it.)
 
-module load anaconda intel/2022.1.2 hdf5/1.10.1 zlib/1.2.11 netcdf/4.8.1 swig/4.1.1 gsl/2.7
-conda activate er3t
+set -euo pipefail
 
 PROJECT_ROOT="/projects/yuch8913/O2band_sim"
 cd "$PROJECT_ROOT"
+source curc_runtime.sh
 source setup_env.sh
-export PYTHONPATH="$PROJECT_ROOT/src:$PYTHONPATH"
+export PYTHONPATH="$PROJECT_ROOT/src:${PYTHONPATH:-}"
 
 # Install HAPI into the active er3t env (idempotent; skips if already present).
-python -c "import hapi" 2>/dev/null || pip install --quiet hitran-api
+"$O2BAND_PYTHON" -c "import hapi" 2>/dev/null \
+    || "$O2BAND_PYTHON" -m pip install --quiet hitran-api
 
 BANDS="${BANDS:-o2a o2b}"
 ZT="${Z_TOP:-120}"
 echo "[hapi] bands=[${BANDS}] z_top=${ZT}"
-python src/eval_hapi.py --bands ${BANDS} --z-top "${ZT}"
+"$O2BAND_PYTHON" src/eval_hapi.py --bands ${BANDS} --z-top "${ZT}"

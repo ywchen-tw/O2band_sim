@@ -8,7 +8,7 @@
 
 # --- er3t (directory CONTAINING the `er3t` package) ------------------------- #
 export ER3T_HOME="/projects/yuch8913/wen_soft/er3t"
-export PYTHONPATH="${ER3T_HOME}:${PYTHONPATH}"
+export PYTHONPATH="${ER3T_HOME}:${PYTHONPATH:-}"
 
 # --- MCARaTS v0.10.4 executable (read by O2BandConfig) ---------------------- #
 export MCARATS_V010_EXE="${MCARATS_V010_EXE:-/projects/yuch8913/wen_soft/mcarats/v0.10.4/src/mcarats}"
