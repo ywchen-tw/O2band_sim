@@ -26,6 +26,14 @@ For each **band × solar-zenith-angle × surface-albedo** combination, on a unif
   absorption, and Rayleigh scattering — layer-resolved and column-integrated, on
   the same spectral/vertical grid.
 
+### Example output
+
+[![TOA reflectance across the O2 A- and B-bands for all prescribed geometries](docs/images/reflectance_o2ab.png)](docs/images/reflectance_o2ab.png)
+
+TOA reflectance from the `z120_p1e7_n3_vac_c50` production run. Colors identify
+solar zenith angle; solid and dashed lines identify surface albedo 0.1 and 0.0,
+respectively. Select the figure for the full-resolution view.
+
 ### Prescribed Phase-1 settings (frozen)
 
 | | |
@@ -98,6 +106,8 @@ o2band_sim/
 ├── curc_shell_blanca_o2band.sh # single-node SBATCH runner        (CURC — see CURC_NOTES.md)
 ├── curc_stage_blanca_o2band.sh # parametrized prep|run|assemble stage runner   (CURC)
 ├── submit_o2band_array.sh      # submits the parallel prep->array->assemble pipeline (CURC)
+├── docs/images/                # tracked README/product visualizations
+│   └── reflectance_o2ab.png    # production O2 A/B-band reflectance quick-look
 ├── data/                       # prescribed inputs (not committed; provided separately)
 │   ├── hitran2020_lines.txt    # HITRAN 2020 O2 + H2O lines (160-col .par format)
 │   ├── afglms.dat              # AFGL mid-latitude-summer profile
