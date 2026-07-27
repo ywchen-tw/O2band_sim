@@ -96,14 +96,14 @@ deviation from the prescribed settings is flagged there.
 ```
 o2band_sim/
 ├── README.md
-├── CURC_NOTES.md               # CURC/Blanca deployment: env, scratch paths, batch runs
 ├── plan_note/                  # ignored local planning and implementation notes
 │   ├── PLAN.md                 # scientific + architectural blueprint
 │   ├── EVAL_PLAN.md            # evaluation blueprint
+│   ├── CURC_NOTES.md           # CURC/Blanca deployment and batch runs
 │   └── NOTES_2026-07-06_review_stderr_fix.md
 ├── setup_env.sh                # env helper (ER3T_HOME, MCARaTS, data/out paths)
 ├── curc_runtime.sh              # CURC native modules + er3t Python interpreter
-├── curc_shell_blanca_o2band.sh # single-node SBATCH runner        (CURC — see CURC_NOTES.md)
+├── curc_shell_blanca_o2band.sh # single-node SBATCH runner (CURC — see plan_note/CURC_NOTES.md)
 ├── curc_stage_blanca_o2band.sh # parametrized prep|run|assemble stage runner   (CURC)
 ├── submit_o2band_array.sh      # submits the parallel prep->array->assemble pipeline (CURC)
 ├── docs/images/                # tracked README/product visualizations
@@ -170,7 +170,7 @@ environment variables:
 On Linux the data/output defaults instead point at a scratch base rather than the
 in-repo dirs. For the CURC/Blanca deployment (concrete scratch paths, module
 loads, conda env, and batch/array run scripts), see
-[`CURC_NOTES.md`](CURC_NOTES.md).
+[`CURC_NOTES.md`](plan_note/CURC_NOTES.md).
 
 ---
 
@@ -252,7 +252,7 @@ the chunk files into the final HDF5s.
 
 > **Running on a cluster.** For the CURC/Blanca deployment — environment setup,
 > scratch paths, the single-node SBATCH runner, and the parallel job-array
-> pipeline — see [`CURC_NOTES.md`](CURC_NOTES.md).
+> pipeline — see [`CURC_NOTES.md`](plan_note/CURC_NOTES.md).
 
 ---
 
