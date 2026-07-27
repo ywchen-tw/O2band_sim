@@ -18,21 +18,24 @@ statistics carry over.  Generated 2026-07-06; production photons raised to
 The participant-model ensemble (KNMI intercomparison) was **not available**, so
 this evaluation rests on independent public references and local model reruns.
 
-> **Erratum (2026-07-25) — two findings from the participant feedback supersede
-> parts of this report.** (1) The delivered air-wavelength grid is displaced
-> −0.19 to −0.21 nm from the vacuum grid the other participants use; a
-> convention mismatch, not a physics error (line positions round-trip to
-> <0.001 nm). (2) The production wing cutoff (±N·ν₀/R ≈ 2 cm⁻¹) discarded
-> ~0.055 of column OD in the A-band micro-windows. **This invalidates the
-> attribution in §5**: the 8–9× between-line deficit vs ABSCO was mostly wing
-> truncation, not the omitted CIA + line mixing. With untruncated wings our
-> between-line σ is ~1.6e-26 cm², ~7× *above* ABSCO — a pure Voigt far wing
-> overshoots. **Check #4 could not have caught this**: `eval_hapi_local.py`
-> builds its HAPI table from the same band ±5 cm⁻¹ line subset, so both codes
-> were truncated identically. `tests/test_wings.py` (brute-force, no cutoff) now
-> covers it. Both defects are fixed in code; PLAN.md §7.2–§7.4 record the
-> revised decisions. The reflectance figures below are from the superseded
-> production run and stand only as a record of it.
+> **Delivery v2 re-evaluation (2026-07-26).** Run `z120_p1e7_n3_vac_c50`:
+> **vacuum** wavelength grid, **±50 cm⁻¹** plain-truncation wing cutoff, Rayleigh
+> at vacuum λ. This supersedes the v1 numbers below, which were produced with an
+> air grid and a ~2 cm⁻¹ cutoff. The v1 cutoff discarded ~0.055 of column optical
+> depth in the A-band micro-windows (more than twice the whole Rayleigh OT) and
+> **invalidated the attribution in §5** — the 8–9× between-line deficit vs ABSCO
+> was mostly wing truncation, not the omitted CIA + line mixing.
+>
+> **Check #4 could not have caught it**: `eval_hapi_local.py` built its HAPI
+> table from the same band ±5 cm⁻¹ line subset, with air-converted band limits,
+> and never told HAPI what wing to use — so both codes were truncated the same
+> way. That script is fixed (vacuum band limits, margin derived from the cutoff,
+> HAPI wing matched to ours) and re-run below. `tests/test_wings.py` adds a
+> brute-force **no-cutoff** reference, which is the only thing that can bound
+> truncation error.
+>
+> Scorecard rows below are v2 results except where marked *(v1, pending)* —
+> those need inputs available only on CURC (ABSCO tables, OCO solar model).
 
 > Erratum (2026-07-06): the delivered `reflectance_stderr`/`radiance_stderr` were
 > originally computed with the population std (ddof=0) over the Nrun=3 runs and
@@ -47,16 +50,25 @@ this evaluation rests on independent public references and local model reruns.
 
 ## Scorecard
 
-| # | component | independent reference | agreement | script |
+| # | component | independent reference | agreement (v2) | script |
 |---|---|---|---|---|
-| 1 | Rayleigh cross-section | Bucholtz (1995) | **~0.03%** | `eval_rayleigh.py` |
-| 2 | Rayleigh column OT | Hansen & Travis (1974) | **<0.1%** | `eval_band_metrics.py` |
-| 3 | O2 absorber amount | canonical 0.2095 dry-air VMR | **−0.17%** (H2O dilution) | `eval_band_metrics.py` |
-| 4 | O2 line-by-line engine | HAPI, **matched** HITRAN 2020 | **~0.1–0.5%** | `eval_hapi_local.py` |
-| 5 | O2 A-band continuum | OCO ABSCO v5.2 | **8–9× low** → ~0.01 OT (CIA+line-mixing, omitted by design) | `eval_absco.py` |
-| 6 | RT solver + reflectance convention | libRadtran / DISORT | **<0.4% rel RMS** — window (rRMS 0.31%) + in-band injected OD 0.05–3, both bands (rRMS 0.29/0.36%), corr 1.0 | `eval_lrt.py`, `eval_lrt_inband.py` |
-| 7 | Solar transmittance (Toon SPTS 2024, radiance-only input) | OCO L2 solar model, O2A overlap | **RMS 3×10⁻⁴**, bias −7×10⁻⁶, corr 0.99999 | `eval_spts_oco.py` |
+| 1 | Rayleigh cross-section | Bucholtz (1995) | **+0.03%** (O2A) / **+0.02%** (O2B), corr 1.00000 | `eval_rayleigh.py` |
+| 2 | Rayleigh column OT | Hansen & Travis (1974) | **+0.04%** @550, **−0.05%** @688, **−0.07%** @760 nm | `eval_band_metrics.py` |
+| 3 | O2 absorber amount | canonical 0.2095 dry-air VMR | **−0.17%** (H2O dilution, physically correct) | `eval_band_metrics.py` |
+| 4 | O2 line-by-line engine | HAPI, **matched** HITRAN 2020 **and matched 50 cm⁻¹ wing** | peak **+0.39%** / **−0.04%** (O2A sfc/upper), **−1.05%** / **−0.22%** (O2B); corr 0.9997–0.99997; median rel ~5×10⁻⁴ | `eval_hapi_local.py` |
+| 5 | O2 A-band continuum | OCO ABSCO v5.2 | *(v1, pending — needs CURC)*; with full wings our between-line σ now **exceeds** ABSCO, see §5 | `eval_absco.py` |
+| 6 | RT solver + reflectance convention | libRadtran / DISORT 16-stream | window **rel RMS 0.44%**, in-band (col OD 0.10–2.67) **rel RMS 0.19%**, both corr 1.00000 | `eval_lrt.py`, `eval_lrt_inband.py` |
+| 7 | Solar transmittance (Toon SPTS 2024) | OCO L2 solar model | *(v1, pending — needs CURC)*; solar model unchanged in v2 | `eval_spts_oco.py` |
 | — | *(context)* O2A line intensities | HAPI online = HITRAN 2024 | **+1.3%** (edition change, not a defect) | `eval_hapi.py` |
+
+Product-level gates on the v2 run, both green:
+
+| gate | result |
+|---|---|
+| MC noise (`noise_report.py`, threshold 0.01) | worst rel-stderr p95 **0.0019** (O2A) / **0.0005** (O2B) — **PASS** |
+| RT regression (`tests/test_rt_regression.py`) | **PASS** both bands: τ_R 0.02556~0.02558 (0.07%) / 0.03928~0.03930 (0.05%); window + saturated core + albedo monotonicity over 3 SZA × 2 albedo |
+| Wing/grid guards (`tests/test_wings.py`) | **7/7** |
+| Absorption suite (`tests/test_absorption.py`) | **10/10** |
 
 **Bottom line:** absorption (line engine) and scattering (Rayleigh) match
 independent references to well under 1%; the RT transport and reflectance
@@ -102,18 +114,26 @@ HAPI is an independent Voigt LBL implementation.  Run on the **same** local
 HITRAN 2020 line data (removing any edition difference), our per-layer O2
 cross-section vs HAPI:
 
-| band / layer | peak σ ours vs HAPI | correlation |
-|---|---|---|
-| O2A surface (292 K) | −0.13% | 0.99979 |
-| O2A upper (216 K) | −0.05% | 0.99997 |
-| O2B surface (292 K) | +0.51% | 0.99972 |
-| O2B upper (216 K) | −0.12% | 0.99996 |
+**v2 (2026-07-26), wing cutoff matched at 50 cm⁻¹ on both sides:**
 
-Core median relative differences are sub-0.6% (mostly ~0).  The absorption engine
-— line intensity S(T) (TIPS-2021 partition sums), Voigt shape, pressure
-broadening/shift — reproduces an independent implementation to **~0.1–0.5%**.  The
-residual is the pure implementation difference (our documented wing cutoff
-±ncut·ν₀/R vs HAPI's 50-half-width default, plus partition/Voigt details).
+| band / layer | peak σ ours vs HAPI | correlation | median rel. diff |
+|---|---|---|---|
+| O2A surface (955.9 hPa, 291.9 K) | +0.39% | 0.99979 | −5.3×10⁻⁴ |
+| O2A upper (102.7 hPa, 215.7 K) | −0.04% | 0.99997 | −6.4×10⁻⁴ |
+| O2B surface (955.9 hPa, 291.9 K) | −1.05% | 0.99972 | +7.0×10⁻⁴ |
+| O2B upper (102.7 hPa, 215.7 K) | −0.22% | 0.99997 | −4.0×10⁻⁴ |
+
+Median relative differences are ~5×10⁻⁴ and the relative bias ~10⁻⁴; peaks agree
+to **0.04–1.05%**.  The absorption engine — line intensity S(T) (TIPS-2021
+partition sums), Voigt shape, pressure broadening/shift, and now the far wing —
+reproduces an independent implementation to well under 1%.  The remaining
+per-point scatter (rel. RMS 1–2%, p5/p95 ≈ ±3%) sits on steep line flanks, where
+a sub-grid wavenumber offset moves σ by a few percent; it is not a bias.
+
+*v1 for reference (unmatched wings, air band limits, ±5 cm⁻¹ HAPI table):*
+O2A −0.13% / −0.05%, O2B +0.51% / −0.12%.  Those numbers looked good for the
+wrong reason — both codes were truncated at ~2 cm⁻¹, so the check was blind to
+the far wing entirely.
 
 ### 4a. HITRAN version note (context, not a defect)
 
