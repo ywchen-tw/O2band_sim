@@ -5,6 +5,8 @@ data/
 out/
 # Operating-rules file (kept local, not committed)
 CLAUDE.md
+# Planning and implementation notes (kept local, not committed)
+plan_note/
 
 # --- scientific data-format files (generated / bulky / provided separately) -
 # Code lives in git; all data (prescribed inputs + downloaded TIPS-2021

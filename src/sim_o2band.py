@@ -66,6 +66,7 @@ from util.absorption import (hitran_lines, o2band_absorption, cal_rayleigh_od,
 from util.cia import hitran_cia, pick_cia_file
 from util.er3t_abs import mca_atm_lbl, mca_abs_lbl, set_per_g_rayleigh
 from util.mca_out_lbl import mca_out_lbl
+from run_documents import save_run_documents
 
 from er3t.rtm.mca import mca_atm_1d, mcarats_ng
 
@@ -496,6 +497,13 @@ class O2BandSim:
                 band_files[band] = band_path
         if verbose:
             print('assembled merged file: %s' % merged_path)
+        documents = save_run_documents(
+            merged_path, output_dir=self.cfg.out_dir,
+            noise_threshold=float(os.environ.get('NOISE_THRESHOLD', '0.01')))
+        if verbose:
+            for name in ('SUMMARY.md', 'EVAL_REPORT.md'):
+                item = documents[name]
+                print('%s %s: %s' % (item['status'], name, item['path']))
         return merged_path, band_files
 
     def _require_all_chunks(self, band, absb):

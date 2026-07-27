@@ -10,7 +10,7 @@ pressure, cloud/aerosol height, and CO₂ light-path correction.
 
 > **Scope.** This repository implements **Phase 1 only**: clear-sky, everything
 > prescribed. No clouds, aerosols, polarization, instrument convolution, or
-> real-data comparison. See [`PLAN.md`](PLAN.md) for the scientific/architectural
+> real-data comparison. See [`PLAN.md`](plan_note/PLAN.md) for the scientific/architectural
 > blueprint and the validation table.
 
 ---
@@ -87,9 +87,12 @@ deviation from the prescribed settings is flagged there.
 
 ```
 o2band_sim/
-├── PLAN.md                     # scientific + architectural blueprint (read this)
 ├── README.md
 ├── CURC_NOTES.md               # CURC/Blanca deployment: env, scratch paths, batch runs
+├── plan_note/                  # ignored local planning and implementation notes
+│   ├── PLAN.md                 # scientific + architectural blueprint
+│   ├── EVAL_PLAN.md            # evaluation blueprint
+│   └── NOTES_2026-07-06_review_stderr_fix.md
 ├── setup_env.sh                # env helper (ER3T_HOME, MCARaTS, data/out paths)
 ├── curc_runtime.sh              # CURC native modules + er3t Python interpreter
 ├── curc_shell_blanca_o2band.sh # single-node SBATCH runner        (CURC — see CURC_NOTES.md)
@@ -100,8 +103,13 @@ o2band_sim/
 │   ├── afglms.dat              # AFGL mid-latitude-summer profile
 │   ├── CU_composite_solar.dat  # CU composite solar reference spectrum
 │   └── TIPS_2021_PYTHON/QTpy/  # TIPS-2021 partition sums (provided separately)
+├── out/z120_p1e7_n3_vac_c50/  # product output + ignored product/report summaries
+│   ├── SUMMARY.md
+│   ├── EVAL_REPORT.md
+│   └── PRODUCT_SUMMARY.md
 ├── src/
 │   ├── sim_o2band.py           # driver: config, cached absorption, chunked/sharded RT, assemble
+│   ├── run_documents.py        # writes run-local SUMMARY.md + EVAL_REPORT.md
 │   ├── noise_report.py         # per-(SZA,albedo) MC-noise report / threshold gate
 │   └── util/
 │       ├── atmosphere.py       # AFGL profile -> layers (p, T, gas columns)
