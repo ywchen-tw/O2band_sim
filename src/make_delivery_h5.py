@@ -22,7 +22,10 @@ import argparse
 import h5py
 
 
-DEFAULT_DROP = ('radiance', 'radiance_stderr')
+# Everything that depends on the absolute solar spectrum.  Reflectance and
+# optical thickness are F0-independent, so the delivery carries no solar model
+# at all -- participants cannot accidentally compare against our choice of F0.
+DEFAULT_DROP = ('radiance', 'radiance_stderr', 'f0')
 
 
 def _copy_attrs(src, dst):

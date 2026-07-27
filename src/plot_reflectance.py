@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 """
 Two-panel TOA-reflectance figure for the O2 A/B-band benchmark: one panel per band
-(O2A, O2B), reflectance vs air wavelength for all prescribed geometries.
+(O2A, O2B), reflectance vs wavelength for all prescribed geometries.  The
+wavelength convention is read from the file and shown on the axis -- never
+assumed, since a mislabelled axis is what set off the 2026-07-25 intercomparison
+discrepancy in the first place.
 
 Encoding: colour = solar zenith angle (Okabe-Ito colourblind-safe, fixed order),
 linestyle = surface albedo (the two albedo groups also separate by magnitude --
@@ -29,6 +32,17 @@ BANDS = [('o2a', 'O$_2$ A-band'), ('o2b', 'O$_2$ B-band')]
 
 def _group(f, band):
     return f[band] if (band in f and isinstance(f[band], h5py.Group)) else f
+
+
+def _convention(f, g):
+    """'vacuum' / 'air' for the wvl axis: per-band attr, else metadata, else
+    flag it as unknown rather than guessing."""
+    c = g.attrs.get('wavelength_convention')
+    if c is None and 'metadata' in f:
+        c = f['metadata'].attrs.get('wavelength_convention')
+    if c is None:
+        return 'convention UNSTATED'
+    return c.decode() if isinstance(c, bytes) else str(c)
 
 
 def _run_label(f):
@@ -65,7 +79,7 @@ def plot(h5path, out_png, noise=False):
                     ax.plot(wvl, y, color=SZA_COLOR.get(float(s), '0.3'),
                             ls=ALB_STYLE.get(float(a), '-'), lw=0.6, alpha=0.9)
             ax.set_title(title)
-            ax.set_xlabel('Wavelength (nm, air)')
+            ax.set_xlabel('Wavelength (nm, %s)' % _convention(f, g))
             ax.set_xlim(wvl[0], wvl[-1])
             ax.margins(x=0)
             if noise:

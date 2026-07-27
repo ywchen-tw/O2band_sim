@@ -111,14 +111,36 @@ def check_band(fname):
         assert np.all(core < 1e-3), 'SZA=%.0f core rho not ~0: %s' % (s, core)
         assert (core.max() - core.min()) < 5e-5, 'SZA=%.0f core albedo-dependent' % s
 
-        # V9: reflectance increases with albedo.  Pointwise monotonicity is
-        # enforced only within the MC uncertainty (deep cores sit at the ~1e-6
-        # noise floor for every albedo); aggregate monotonicity is enforced
-        # strictly on the band-median (robust to per-point noise).
+        # V9: reflectance increases with albedo.
+        #
+        # A hard np.all() over 15001 points cannot be required.  The per-point
+        # sigma comes from only Nrun=3 samples, so it is a chi-distributed
+        # estimate with 2 dof that underestimates the true sigma a few percent
+        # of the time; across ~10^5 comparisons a handful of "5 sigma"
+        # excursions is expected on a perfectly correct run.  Requiring zero
+        # made this test fail intermittently on good data.
+        #
+        # Bound the violations two ways instead -- both count and magnitude.
+        # A genuine albedo fault (wired backwards, surface term dropped) shows
+        # up at EVERY point including the bright continuum, with deficits of
+        # order the albedo itself (~0.09), so it cannot hide under either bound.
+        # Deep cores legitimately sit at the ~1e-6 noise floor for every albedo.
+        MAX_VIOL_FRAC = 1.0e-3      # 0.1% of points
+        MAX_VIOL_ABS = 1.0e-4       # ~0.1% of the albedo-0.1 continuum
         for ia in range(1, len(alb)):
             tol = 5.0 * np.sqrt(ref_e[js, ia]**2 + ref_e[js, ia - 1]**2) + 1e-6
-            assert np.all(ref[js, ia] >= ref[js, ia - 1] - tol), \
-                'SZA=%.0f pointwise non-monotonic beyond MC noise' % s
+            deficit = (ref[js, ia - 1] - tol) - ref[js, ia]
+            viol = deficit > 0
+            frac = viol.mean()
+            worst = float(deficit[viol].max()) if viol.any() else 0.0
+            assert frac <= MAX_VIOL_FRAC, \
+                ('SZA=%.0f non-monotonic in albedo at %.3f%% of points '
+                 '(> %.3f%% allowed for MC scatter)' % (s, 100 * frac,
+                                                        100 * MAX_VIOL_FRAC))
+            assert worst <= MAX_VIOL_ABS, \
+                ('SZA=%.0f albedo deficit %.2e exceeds %.0e -- too large to be '
+                 'MC noise' % (s, worst, MAX_VIOL_ABS))
+            # aggregate monotonicity stays strict: robust to per-point noise
             assert np.median(ref[js, ia]) > np.median(ref[js, ia - 1]), \
                 'SZA=%.0f band-median not increasing with albedo' % s
 
